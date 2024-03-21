@@ -198,6 +198,15 @@ startbbrmod_nanqinlang(){
 	echo "net.ipv4.tcp_congestion_control=nanqinlang" >> /etc/sysctl.conf
 	sysctl -p
 	echo -e "${Info}魔改版BBR启动成功！"
+ }
+
+#启用BBR+cake
+startbbrcake() {
+  remove_all
+  echo "net.core.default_qdisc=cake" >>/etc/sysctl.d/99-sysctl.conf
+  echo "net.ipv4.tcp_congestion_control=bbr" >>/etc/sysctl.d/99-sysctl.conf
+  sysctl --system
+  echo -e "${Info}BBR+cake修改成功，重启生效！"
 }
 
 #启用Lotserver
@@ -398,6 +407,9 @@ case "$num" in
 	optimizing_system
 	;;
 	11)
+        startbbrcake
+        ;;
+	12)
 	exit 1
 	;;
 	*)
