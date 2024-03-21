@@ -360,9 +360,9 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
 ————————————杂项管理————————————
  ${Green_font_prefix}9.${Font_color_suffix} 卸载全部加速
  ${Green_font_prefix}10.${Font_color_suffix} 系统配置优化
- ${Green_font_prefix}11.${Font_color_suffix} 退出脚本
- ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+CAKE
-————————————————————————————————" && echo
+ ${Green_font_prefix}11.${Font_color_suffix} 使用BBR+CAKE
+ ${Green_font_prefix}12.${Font_color_suffix} 退出脚本
+ ————————————————————————————————" && echo
 
 	check_status
 	if [[ ${kernel_status} == "noinstall" ]]; then
