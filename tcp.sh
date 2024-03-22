@@ -210,7 +210,7 @@ startbbrcake() {
   }
 
 #启用BBR+fq_pie
-startbbrfqpie() {
+startbbrfq_pie() {
   remove_all
   echo "net.core.default_qdisc=fq_pie" >>/etc/sysctl.d/99-sysctl.conf
   echo "net.ipv4.tcp_congestion_control=bbr" >>/etc/sysctl.d/99-sysctl.conf
@@ -423,7 +423,7 @@ case "$num" in
         startbbrcake
 	;;
 	12)
-        startbbrfqpie
+        startbbrfq_pie
         ;;
 	13)
 	exit 1
