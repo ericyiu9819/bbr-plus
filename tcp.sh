@@ -438,8 +438,7 @@ case "$num" in
 	;;
 	14)
         installssr
-        ;;
-	*)
+        *)
 	clear
 	echo -e "${Error}:请输入正确数字 [0-11]"
 	sleep 5s
