@@ -20,9 +20,7 @@ Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
 #安装SSR
 installssr(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/tree/master/./tcp.sh
-
-
-  }
+	     }
 
 
 #安装BBR内核
@@ -435,12 +433,11 @@ case "$num" in
         ;;
 	13)
 	exit 1
-	;;
 	14)
-        installssr
+	installssr
         *)
 	clear
-	echo -e "${Error}:请输入正确数字 [0-11]"
+	echo -e "${Error}:请输入正确数字 [0-14]"
 	sleep 5s
 	start_menu
 	;;
