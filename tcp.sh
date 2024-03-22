@@ -423,7 +423,7 @@ case "$num" in
         startbbrcake
 	;;
 	12)
-        startbbrfq_pie
+        startbbrfqpie
         ;;
 	13)
 	exit 1
