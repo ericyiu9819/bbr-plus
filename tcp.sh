@@ -210,23 +210,25 @@ startbbrcake() {
 }
 
 #启用Lotserver
-startlotserver(){
-	remove_all
-	if [[ "${release}" == "centos" ]]; then
-		yum install ethtool
-	else
-		apt-get update
-		apt-get install ethtool
-	fi
-	bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/chiakge/lotServer/master/Install.sh) install
-	sed -i '/advinacc/d' /appex/etc/config
-	sed -i '/maxmode/d' /appex/etc/config
-	echo -e "advinacc=\"1\"
-maxmode=\"1\"">>/appex/etc/config
-	/appex/bin/lotServer.sh restart
-	start_menu
+startlotserver() {
+  remove_bbr_lotserver
+  if [[ "${release}" == "centos" ]]; then
+    yum install ethtool -y
+  else
+    apt-get update || apt-get --allow-releaseinfo-change update
+    apt-get install ethtool -y
+  fi
+  #bash <(wget -qO- https://git.io/lotServerInstall.sh) install
+  #echo | bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/1265578519/lotServer/main/lotServerInstall.sh) install
+  # echo | bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/fei5seven/lotServer/master/lotServerInstall.sh) install
+  echo | bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/wxlost/lotServer/master/lotServerInstall.sh) install
+  sed -i '/advinacc/d' /appex/etc/config
+  sed -i '/maxmode/d' /appex/etc/config
+  echo -e "advinacc=\"1\"
+maxmode=\"1\"" >>/appex/etc/config
+  /appex/bin/lotServer.sh restart
+  start_menu
 }
-
 #卸载全部加速
 remove_all(){
 	rm -rf bbrmod
