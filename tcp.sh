@@ -435,7 +435,7 @@ case "$num" in
         ;;
 	13)
 	exit 1
-	 ;;
+	;;
 	14)
         installssr
         ;;
