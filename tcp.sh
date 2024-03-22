@@ -432,11 +432,11 @@ case "$num" in
         startbbrfqpie
         ;;
 	13)
-	exit 1
+	installssr
         ;;
 	14)
-	installssr
-        *)
+        exit 1
+     	*)
 	clear
 	echo -e "${Error}:请输入正确数字 [0-14]"
 	sleep 5s
