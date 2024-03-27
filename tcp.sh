@@ -33,7 +33,7 @@ downloadubuntu5.3(){
 
 
 #安装BBR5.3内核
-installbbr(){
+installubuntu5.3(){
 	kernel_version="linux-generic-hwe-18.04" then
                apt-get update && apt-get upgrade -y && apt-get autoremove -y --purge
 
