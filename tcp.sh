@@ -22,22 +22,12 @@ installssr(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/tree/master/tcp.sh
 	     }
 #安装Ubuntu5.3内核
-downloadubuntu5.3(){
+installubuntu5.3(){
              apt-get install --install-recommends linux-generic-hwe-18.04 -y
 	      if [[ "${release}" == "linux-generic-hwe-18.04" ]]; then
                       reboot
 		      
        
-		       
-	     
-
-
-#安装BBR5.3内核
-installubuntu5.3(){
-	kernel_version="linux-generic-hwe-18.04" then
-               apt-get update && apt-get upgrade -y && apt-get autoremove -y --purge
-
- 
 #安装BBR内核
 installbbr(){
 	kernel_version="4.11.8"
@@ -133,6 +123,10 @@ startbbr(){
 	echo -e "${Info}BBR启动成功！"
 }
 
+#启用ubuntu5.3内核
+startubuntu5.3(){
+	apt-get update && apt-get upgrade -y && apt-get autoremove -y --purge
+           }
 #启用BBRplus
 startbbrplus(){
 	remove_all
@@ -380,12 +374,12 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}0.${Font_color_suffix} 升级脚本
 ————————————内核管理————————————
  ${Green_font_prefix}1.${Font_color_suffix} 安装 BBR/BBR魔改版内核
-  ${Green_font_prefix}2.${Font_color_suffix} 下载 ubuntu5.3内核
+ ${Green_font_prefix}2.${Font_color_suffix} 安装ubuntu5.3内核
  ${Green_font_prefix}3.${Font_color_suffix} 安装 BBRplus版内核 
  ${Green_font_prefix}4.${Font_color_suffix} 安装 Lotserver(锐速)内核
 ————————————加速管理————————————
  ${Green_font_prefix}5.${Font_color_suffix} 使用BBR加速
- ${Green_font_prefix}6.${Font_color_suffix} 安装ubuntu5.3内核
+ ${Green_font_prefix}6.${Font_color_suffix} 使用ubuntu5.3内核
  ${Green_font_prefix}7.${Font_color_suffix} 使用BBR魔改版加速
  ${Green_font_prefix}8.${Font_color_suffix} 使用暴力BBR魔改版加速(不支持部分系统)
  ${Green_font_prefix}9.${Font_color_suffix} 使用BBRplus版加速
@@ -416,7 +410,7 @@ case "$num" in
 	check_sys_bbr
         ;;
 	2)
-        downloadubuntu5.3
+        installubuntu5.3
         ;;
 	3)
 	check_sys_bbrplus
@@ -428,7 +422,7 @@ case "$num" in
 	startbbr
         ;;
         6)
-	installubuntu5.3
+	startubuntu5.3
 	;;
 	7)
 	startbbrmod
