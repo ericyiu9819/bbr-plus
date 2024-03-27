@@ -21,13 +21,8 @@ Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
 installssr(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/tree/master/tcp.sh
 	     }
-#安装Ubuntu5.3内核
-installubuntu5.3(){
-             apt-get install --install-recommends linux-generic-hwe-18.04 -y
-	      if [[ "${release}" == "linux-generic-hwe-18.04" ]]; then
-                      reboot
+
 		      
-       
 #安装BBR内核
 installbbr(){
 	kernel_version="4.11.8"
@@ -123,10 +118,6 @@ startbbr(){
 	echo -e "${Info}BBR启动成功！"
 }
 
-#启用ubuntu5.3内核
-startubuntu5.3(){
-	apt-get update && apt-get upgrade -y && apt-get autoremove -y --purge
-           }
 #启用BBRplus
 startbbrplus(){
 	remove_all
@@ -374,23 +365,21 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}0.${Font_color_suffix} 升级脚本
 ————————————内核管理————————————
  ${Green_font_prefix}1.${Font_color_suffix} 安装 BBR/BBR魔改版内核
- ${Green_font_prefix}2.${Font_color_suffix} 安装ubuntu5.3内核
- ${Green_font_prefix}3.${Font_color_suffix} 安装 BBRplus版内核 
- ${Green_font_prefix}4.${Font_color_suffix} 安装 Lotserver(锐速)内核
+ ${Green_font_prefix}2.${Font_color_suffix} 安装 BBRplus版内核 
+ ${Green_font_prefix}3.${Font_color_suffix} 安装 Lotserver(锐速)内核
 ————————————加速管理————————————
- ${Green_font_prefix}5.${Font_color_suffix} 使用BBR加速
- ${Green_font_prefix}6.${Font_color_suffix} 使用ubuntu5.3内核
- ${Green_font_prefix}7.${Font_color_suffix} 使用BBR魔改版加速
- ${Green_font_prefix}8.${Font_color_suffix} 使用暴力BBR魔改版加速(不支持部分系统)
- ${Green_font_prefix}9.${Font_color_suffix} 使用BBRplus版加速
- ${Green_font_prefix}10.${Font_color_suffix} 使用Lotserver(锐速)加速
+ ${Green_font_prefix}4.${Font_color_suffix} 使用BBR加速
+ ${Green_font_prefix}5.${Font_color_suffix} 使用BBR魔改版加速
+ ${Green_font_prefix}6.${Font_color_suffix} 使用暴力BBR魔改版加速(不支持部分系统)
+ ${Green_font_prefix}7.${Font_color_suffix} 使用BBRplus版加速
+ ${Green_font_prefix}8.${Font_color_suffix} 使用Lotserver(锐速)加速
 ————————————杂项管理————————————
- ${Green_font_prefix}11.${Font_color_suffix} 卸载全部加速
- ${Green_font_prefix}12.${Font_color_suffix} 系统配置优化
- ${Green_font_prefix}13.${Font_color_suffix} 使用BBR+CAKE
- ${Green_font_prefix}14.${Font_color_suffix} 使用BBR+FQ_PIE
- ${Green_font_prefix}15.${Font_color_suffix} 退出脚本
- ${Green_font_prefix}16.${Font_color_suffix} 安裝ssr
+ ${Green_font_prefix}9.${Font_color_suffix} 卸载全部加速
+ ${Green_font_prefix}10.${Font_color_suffix} 系统配置优化
+ ${Green_font_prefix}11.${Font_color_suffix} 使用BBR+CAKE
+ ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+FQ_PIE
+ ${Green_font_prefix}13.${Font_color_suffix} 退出脚本
+ ${Green_font_prefix}14.${Font_color_suffix} 安裝ssr
  ————————————————————————————————" && echo
 
 	check_status
@@ -410,48 +399,42 @@ case "$num" in
 	check_sys_bbr
         ;;
 	2)
-        installubuntu5.3
-        ;;
-	3)
 	check_sys_bbrplus
 	;;
-	4)
+	3)
 	check_sys_Lotsever
 	;;
-	5)
+	4)
 	startbbr
-        ;;
-        6)
-	startubuntu5.3
 	;;
-	7)
+	5)
 	startbbrmod
 	;;
-	8)
+	6)
 	startbbrmod_nanqinlang
 	;;
-	9)
+	7)
 	startbbrplus
 	;;
-	10)
+	8)
 	startlotserver
 	;;
-	11)
+	9)
 	remove_all
 	;;
-	12)
+	10)
 	optimizing_system
 	;;
-	13)
+	11)
         startbbrcake
 	;;
-	14)
+	12)
         startbbrfqpie
         ;;
-	16)
+	13)
 	installssr
         ;;
-	15)
+	14)
         exit 1
 	;;
         *)
