@@ -19,7 +19,7 @@ Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
 #安装SSR
 installssr(){
-             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/tree/master/tcp.sh
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install.sh
 	     }
 
 		      
