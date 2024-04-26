@@ -438,6 +438,7 @@ case "$num" in
         ;;
 	14)
 	installssr
+        ;;
         15)
 	installbbrv3
         ;;
