@@ -22,6 +22,10 @@ installssr(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install.sh
 	     }
 
+#安装bbrv3
+installbbrv3(){
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbrv3.sh
+	     }
 		      
 #安装BBR内核
 installbbr(){
@@ -380,6 +384,7 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+FQ_PIE
  ${Green_font_prefix}13.${Font_color_suffix} 退出脚本
  ${Green_font_prefix}14.${Font_color_suffix} 安裝ssr
+ ${Green_font_prefix}15.${Font_color_suffix} 安裝bbrv3
  ————————————————————————————————" && echo
 
 	check_status
@@ -431,10 +436,12 @@ case "$num" in
 	12)
         startbbrfqpie
         ;;
-	13)
-	installssr
-        ;;
 	14)
+	installssr
+        15)
+	installbbrv3
+        ;;
+	13)
         exit 1
 	;;
         *)
