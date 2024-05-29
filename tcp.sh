@@ -24,7 +24,9 @@ installssr(){
 
 #安装bbrv3
 installbbrv3(){
-             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbrv3.sh
+             wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3main/bbrv3.sh"
+chmod +x bbrv3.sh
+./bbrv3.sh
 	     }
 		      
 #安装BBR内核
