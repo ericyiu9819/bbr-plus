@@ -24,6 +24,7 @@ installssr(){
 #安裝vmess
 installvmess(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/v2ray/master/v2ray.sh
+	     }
 
 #安装bbrv3
 installbbrv3(){
