@@ -21,6 +21,9 @@ Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
 installssr(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install.sh
 	     }
+#安裝vmess
+installvmess(){
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/v2ray/master/v2ray.sh
 
 #安装bbrv3
 installbbrv3(){
@@ -385,6 +388,7 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}13.${Font_color_suffix} 退出脚本
  ${Green_font_prefix}14.${Font_color_suffix} 安裝ssr
  ${Green_font_prefix}15.${Font_color_suffix} 安裝bbrv3
+ ${Green_font_prefix}16.${Font_color_suffix} 安裝vmess
  ————————————————————————————————" && echo
 
 	check_status
@@ -441,6 +445,9 @@ case "$num" in
         ;;
 	15)
 	installbbrv3
+        ;;
+	16)
+	installvmess
         ;;
 	13)
         exit 1
