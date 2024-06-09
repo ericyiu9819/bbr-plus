@@ -33,9 +33,37 @@ installbbrv3(){
 		      
 #安装BBR内核
 installbbr(){
-	    wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr.sh"
-             }
-
+	kernel_version="4.11.8"
+	if [[ "${release}" == "centos" ]]; then
+		rpm --import http://${github}/bbr/${release}/RPM-GPG-KEY-elrepo.org
+		yum install -y http://${github}/bbr/${release}/${version}/${bit}/kernel-ml-${kernel_version}.rpm
+		yum remove -y kernel-headers
+		yum install -y http://${github}/bbr/${release}/${version}/${bit}/kernel-ml-headers-${kernel_version}.rpm
+		yum install -y http://${github}/bbr/${release}/${version}/${bit}/kernel-ml-devel-${kernel_version}.rpm
+	elif [[ "${release}" == "debian" || "${release}" == "ubuntu" ]]; then
+		mkdir bbr && cd bbr
+		wget http://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1d-0+deb10u2_amd64.deb
+		wget -N --no-check-certificate http://${github}/bbr/debian-ubuntu/linux-headers-${kernel_version}-all.deb
+		wget -N --no-check-certificate http://${github}/bbr/debian-ubuntu/${bit}/linux-headers-${kernel_version}.deb
+		wget -N --no-check-certificate http://${github}/bbr/debian-ubuntu/${bit}/linux-image-${kernel_version}.deb
+	
+		dpkg -i libssl1.1_1.1.1d-0+deb10u2_amd64.deb
+		dpkg -i linux-headers-${kernel_version}-all.deb
+		dpkg -i linux-headers-${kernel_version}.deb
+		dpkg -i linux-image-${kernel_version}.deb
+		cd .. && rm -rf bbr
+	fi
+	detele_kernel
+	BBR_grub
+	echo -e "${Tip} 重启VPS后，请重新运行脚本开启${Red_font_prefix}BBR/BBR魔改版${Font_color_suffix}"
+	stty erase '^H' && read -p "需要重启VPS后，才能开启BBR/BBR魔改版，是否现在重启 ? [Y/n] :" yn
+	[ -z "${yn}" ] && yn="y"
+	if [[ $yn == [Yy] ]]; then
+		echo -e "${Info} VPS 重启中..."
+		reboot
+	fi
+}
+        
 #安装BBRplus内核
 installbbrplus(){
 	kernel_version="4.14.129-bbrplus"
