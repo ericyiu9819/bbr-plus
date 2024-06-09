@@ -17,6 +17,10 @@ Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_p
 Info="${Green_font_prefix}[信息]${Font_color_suffix}"
 Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
+#安裝BBR18.04
+installbbr18.04(){
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/main/bbr18.04.sh
+	     }
 #安装SSR
 installssr(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install.sh
@@ -387,9 +391,10 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}11.${Font_color_suffix} 使用BBR+CAKE
  ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+FQ_PIE
  ${Green_font_prefix}13.${Font_color_suffix} 退出脚本
- ${Green_font_prefix}14.${Font_color_suffix} 安裝ssr
- ${Green_font_prefix}15.${Font_color_suffix} 安裝bbrv3
+ ${Green_font_prefix}14.${Font_color_suffix} 安裝SSR
+ ${Green_font_prefix}15.${Font_color_suffix} 安裝BBRV3
  ${Green_font_prefix}16.${Font_color_suffix} 安裝vmess
+ ${Green_font_prefix}17.${Font_color_suffix} 安裝BBR18.04
  ————————————————————————————————" && echo
 
 	check_status
@@ -449,6 +454,9 @@ case "$num" in
         ;;
 	16)
 	installvmess
+        ;;
+	17)
+        installbbr18.04
         ;;
 	13)
         exit 1
