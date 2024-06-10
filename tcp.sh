@@ -19,7 +19,7 @@ Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
 #安裝BBR18.04
 installbbr18.04(){
-             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-plus/main/bbr18.04.sh
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr18.04.sh
 	     }
 #安装SSR
 installssr(){
