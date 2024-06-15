@@ -225,9 +225,11 @@ startbbrcake() {
 #启用BBR+fq_pie
 startbbrfqpie() {
   remove_all
-  echo "net.core.default_qdisc=fq_pie" >>/etc/sysctl.d/99-sysctl.conf
-  echo "net.ipv4.tcp_congestion_control=bbr" >>/etc/sysctl.d/99-sysctl.conf
-  sysctl --system
+   modprobe tcp_bbr
+           echo "tcp_bbr" >> /etc/modules-load.d/modules.conf
+           echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+           echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+           sysctl -p
   echo -e "${Info}BBR+FQ_PIE修改成功，重启生效！"
 }
 
