@@ -27,7 +27,7 @@ installssr(){
 	     }
 
 #安装kejilion
-installkejilion){
+installkejilion(){
              wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/sh/main/kejilion.sh"
 	     }
 		      
