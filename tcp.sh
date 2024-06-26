@@ -37,7 +37,9 @@ installkejilion(){
 	     }
 #安裝bbr18.04
 installbbr18.04(){
-             wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr18.04.sh"
+             clear
+             install wget
+             wget --no-check-certificate -O bbr18.04.sh -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr18.04.sh"
              chmod +x bbr18.04.sh
              ./bbr18.04.sh
 	     }    
