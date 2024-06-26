@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
 export PATH
-
 #=================================================
-#	System Required: CentOS 6/7,Debian 8/9,Ubuntu 16+
-#	Description: BBR+BBR魔改版+BBRplus+Lotserver
-#	Version: 1.3.2
-#	Author: 千影,cx9208
-#	Blog: https://www.94ish.me/
+#	System Required: CentOS 7/8,Debian/ubuntu,oraclelinux
+#	Description: BBR+BBRplus+Lotserver
+#	Version: 100.0.2.6
+#	Author: 千影,cx9208,YLX
+#	更新内容及反馈:  https://blog.ylx.me/archives/783.html
 #=================================================
 
-sh_ver="1.3.2"
-github="raw.githubusercontent.com/ericyiu9819/bbr-plus/master"
+# RED='\033[0;31m'
+# GREEN='\033[0;32m'
+# YELLOW='\033[0;33m'
+# SKYBLUE='\033[0;36m'
+# PLAIN='\033[0m'
+
+github="raw.githubusercontent.com/ericyiu99819/bbr-v3/main"
+
 
 Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
 Info="${Green_font_prefix}[信息]${Font_color_suffix}"
