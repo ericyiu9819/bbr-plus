@@ -96,6 +96,7 @@ installbbrplus(){
 	fi
 }
 
+
 #安装Lotserver内核
 installlot(){
 	if [[ "${release}" == "centos" ]]; then
