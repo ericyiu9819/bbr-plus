@@ -29,12 +29,6 @@ installssr(){
              ./install.sh
 	     }
 
-#安装kejilion
-installkejilion(){
-             wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/sh/main/kejilion.sh"
-	     chmod +x ./kejilion.sh
-             ./kejilion.sh
-	     }
  		      
 #安装BBR内核
 installbbr(){
@@ -70,6 +64,7 @@ installbbr(){
 }
         
 #安装BBRplus内核
+#安装BBRplus内核
 installbbrplus(){
 	kernel_version="4.14.129-bbrplus"
 	if [[ "${release}" == "centos" ]]; then
@@ -95,7 +90,6 @@ installbbrplus(){
 		reboot
 	fi
 }
-
 
 #安装Lotserver内核
 installlot(){
@@ -395,8 +389,7 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}11.${Font_color_suffix} 使用BBR+CAKE
  ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+FQ_PIE
  ${Green_font_prefix}13.${Font_color_suffix} 安裝SSR
- ${Green_font_prefix}14.${Font_color_suffix} 安裝kejilione腳本
- ${Green_font_prefix}15.${Font_color_suffix} 退出腳本
+ ${Green_font_prefix}14.${Font_color_suffix} 退出腳本
  ————————————————————————————————" && echo
 
 	check_status
@@ -452,9 +445,6 @@ case "$num" in
 	installssr
         ;;
 	14)
-	installkejilion
-        ;;
-	15)
         exit 1
 	;;
         *)
