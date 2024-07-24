@@ -15,7 +15,7 @@ export PATH
 # SKYBLUE='\033[0;36m'
 # PLAIN='\033[0m'
 
-github="raw.githubusercontent.com/ericyiu99819/bbr-v3/main"
+github="raw.githubusercontent.com/ericyiu99819/bbr-plus/main"
 
 
 Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
@@ -63,7 +63,6 @@ installbbr(){
 	fi
 }
         
-#安装BBRplus内核
 #安装BBRplus内核
 installbbrplus(){
 	kernel_version="4.14.129-bbrplus"
