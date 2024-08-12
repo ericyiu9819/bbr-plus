@@ -29,7 +29,7 @@ installssr(){
              ./install.sh
 	     }
 #安装kejilion
-installssr(){
+installkejilion(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/sh/master/kejilion.sh
 	     chmod +x ./kejilion.sh
              ./kejilion.sh
