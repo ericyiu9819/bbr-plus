@@ -28,6 +28,12 @@ installssr(){
 	     chmod +x ./install.sh
              ./install.sh
 	     }
+#安装bbr18.04
+installbbr18.04(){
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/blob/main/bbr18.04.sh
+	     chmod +x ./bbr18.04.sh
+             ./bbr18.04.sh
+	     }
 #安装kejilion
 installkejilion(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/sh/master/kejilion.sh
@@ -394,7 +400,8 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+FQ_PIE
  ${Green_font_prefix}13.${Font_color_suffix} 安裝SSR
  ${Green_font_prefix}14.${Font_color_suffix} 安裝kejilion
- ${Green_font_prefix}15.${Font_color_suffix} 退出腳本
+ ${Green_font_prefix}15.${Font_color_suffix} 安裝bbr18.04
+ ${Green_font_prefix}16.${Font_color_suffix} 退出腳本
  ————————————————————————————————" && echo
 
 	check_status
@@ -453,6 +460,9 @@ case "$num" in
 	installkejilion
         ;;
 	15)
+	installbbr18.04
+        ;;
+	16)
         exit 1
 	;;
         *)
