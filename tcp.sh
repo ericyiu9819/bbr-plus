@@ -30,7 +30,7 @@ installssr(){
 	     }
 #安装bbr18.04
 installbbr18.04(){
-             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/blob/main/bbr18.04.sh
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr18.04.sh
 	     chmod +x ./bbr18.04.sh
              ./bbr18.04.sh
 	     }
