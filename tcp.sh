@@ -29,7 +29,8 @@ installssr(){
              ./install.sh
 	     }
 #安装bbr-v3
-installbbr3(){wget -q -N --no-check-certificate https://raw.githubusercontent.com/ricyiu9819/bbr-v3/main/bbr-v3.sh
+installbbr3(){
+             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ricyiu9819/bbr-v3/main/bbr-v3.sh
 	     chmod +x ./bbr-v3.sh
              ./bbr-v3.sh
 	     }
