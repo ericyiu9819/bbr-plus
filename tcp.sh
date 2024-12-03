@@ -28,7 +28,11 @@ installssr(){
 	     chmod +x ./install.sh
              ./install.sh
 	     }
-
+#安装bbr-v3
+installbbr3(){wget -q -N --no-check-certificate https://raw.githubusercontent.com/ricyiu9819/bbr-v3/main/bbr-v3.sh
+	     chmod +x ./bbr-v3.sh
+             ./bbr-v3.sh
+	     }
 #安装kejilion
 installkejilion(){
              wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/sh/master/kejilion.sh
@@ -396,6 +400,7 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}13.${Font_color_suffix} 安裝SSR
  ${Green_font_prefix}14.${Font_color_suffix} 安裝kejilion
  ${Green_font_prefix}15.${Font_color_suffix} 退出腳本
+ ${Green_font_prefix}15.${Font_color_suffix} 安装bbr-v3
  ————————————————————————————————" && echo
 
 	check_status
@@ -456,6 +461,9 @@ case "$num" in
 	15)
         exit 1
 	;;
+        16)
+	installbbr-v3
+        ;;
         *)
 	clear
 	echo -e "${Error}:请输入正确数字 [0-14]"
