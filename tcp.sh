@@ -30,7 +30,9 @@ installssr(){
 	     }
 #安装bbr-v3
 installbbr-v3(){
-             wget -q -N --no-check-certificate https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr-v3.sh
+             wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3/master/bbr-v3.sh"
+             chmod +x bbr-v3.sh
+             ./bbr-v3.sh
 	     }
 #安装kejilion
 installkejilion(){
