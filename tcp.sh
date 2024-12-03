@@ -400,7 +400,7 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}12.${Font_color_suffix} 使用BBR+FQ_PIE
  ${Green_font_prefix}13.${Font_color_suffix} 安裝SSR
  ${Green_font_prefix}14.${Font_color_suffix} 安裝kejilion
- ${Green_font_prefix}15.${Font_color_suffix} 退出腳本
+ ${Green_font_prefix}16.${Font_color_suffix} 退出腳本
  ${Green_font_prefix}15.${Font_color_suffix} 安装bbr-v3
  ————————————————————————————————" && echo
 
@@ -459,10 +459,10 @@ case "$num" in
 	14)
 	installkejilion
         ;;
-	15)
+	16)
         exit 1
 	;;
-        16)
+        15)
 	installbbr-v3
         ;;
         *)
