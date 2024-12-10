@@ -97,28 +97,122 @@ installbbrplus(){
 
 #安装Lotserver内核
 installlot(){
-	if [[ "${release}" == "centos" ]]; then
-		rpm --import http://${github}/lotserver/${release}/RPM-GPG-KEY-elrepo.org
-		yum remove -y kernel-firmware
-		yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-firmware-${kernel_version}.rpm
-		yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-${kernel_version}.rpm
-		yum remove -y kernel-headers
-		yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-headers-${kernel_version}.rpm
-		yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-devel-${kernel_version}.rpm
-	elif [[ "${release}" == "ubuntu" ]]; then
-		bash <(wget --no-check-certificate -qO- "http://${github}/Debian_Kernel.sh")
-	elif [[ "${release}" == "debian" ]]; then
-		bash <(wget --no-check-certificate -qO- "http://${github}/Debian_Kernel.sh")
-	fi
-	detele_kernel
-	BBR_grub
-	echo -e "${Tip} 重启VPS后，请重新运行脚本开启${Red_font_prefix}Lotserver${Font_color_suffix}"
-	stty erase '^H' && read -p "需要重启VPS后，才能开启Lotserver，是否现在重启 ? [Y/n] :" yn
-	[ -z "${yn}" ] && yn="y"
-	if [[ $yn == [Yy] ]]; then
-		echo -e "${Info} VPS 重启中..."
-		reboot
-	fi
+	 bit=$(uname -m)
+  if [[ ${bit} != "x86_64" ]]; then
+    echo -e "${Error} 不支持x86_64以外的系统 !" && exit 1
+  fi
+  if [[ ${bit} == "x86_64" ]]; then
+    bit='x64'
+  fi
+  if [[ ${bit} == "i386" ]]; then
+    bit='x32'
+  fi
+  if [[ "${release}" == "centos" ]]; then
+    rpm --import http://${github}/lotserver/${release}/RPM-GPG-KEY-elrepo.org
+    yum remove -y kernel-firmware
+    yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-firmware-${kernel_version}.rpm
+    yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-${kernel_version}.rpm
+    yum remove -y kernel-headers
+    yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-headers-${kernel_version}.rpm
+    yum install -y http://${github}/lotserver/${release}/${version}/${bit}/kernel-devel-${kernel_version}.rpm
+  fi
+
+  if [[ "${release}" == "debian" || "${release}" == "ubuntu" ]]; then
+    deb_issue="$(cat /etc/issue)"
+    deb_relese="$(echo $deb_issue | grep -io 'Ubuntu\|Debian' | sed -r 's/(.*)/\L\1/')"
+    os_ver="$(dpkg --print-architecture)"
+    [ -n "$os_ver" ] || exit 1
+    if [ "$deb_relese" == 'ubuntu' ]; then
+      deb_ver="$(echo $deb_issue | grep -o '[0-9]*\.[0-9]*' | head -n1)"
+      if [ "$deb_ver" == "14.04" ]; then
+        kernel_version="3.16.0-77-generic" && item="3.16.0-77-generic" && ver='trusty'
+      elif [ "$deb_ver" == "16.04" ]; then
+        kernel_version="4.8.0-36-generic" && item="4.8.0-36-generic" && ver='xenial'
+      elif [ "$deb_ver" == "18.04" ]; then
+        kernel_version="4.15.0-30-generic" && item="4.15.0-30-generic" && ver='bionic'
+      else
+        exit 1
+      fi
+      url='archive.ubuntu.com'
+      urls='security.ubuntu.com'
+    elif [ "$deb_relese" == 'debian' ]; then
+      deb_ver="$(echo $deb_issue | grep -o '[0-9]*' | head -n1)"
+      if [ "$deb_ver" == "7" ]; then
+        kernel_version="3.2.0-4-${os_ver}" && item="3.2.0-4-${os_ver}" && ver='wheezy' && url='archive.debian.org' && urls='archive.debian.org'
+      elif [ "$deb_ver" == "8" ]; then
+        kernel_version="3.16.0-4-${os_ver}" && item="3.16.0-4-${os_ver}" && ver='jessie' && url='archive.debian.org' && urls='deb.debian.org'
+      elif [ "$deb_ver" == "9" ]; then
+        kernel_version="4.9.0-4-${os_ver}" && item="4.9.0-4-${os_ver}" && ver='stretch' && url='deb.debian.org' && urls='deb.debian.org'
+      else
+        exit 1
+      fi
+    fi
+    [ -n "$item" ] && [ -n "$urls" ] && [ -n "$url" ] && [ -n "$ver" ] || exit 1
+    if [ "$deb_relese" == 'ubuntu' ]; then
+      echo "deb http://${url}/${deb_relese} ${ver} main restricted universe multiverse" >/etc/apt/sources.list
+      echo "deb http://${url}/${deb_relese} ${ver}-updates main restricted universe multiverse" >>/etc/apt/sources.list
+      echo "deb http://${url}/${deb_relese} ${ver}-backports main restricted universe multiverse" >>/etc/apt/sources.list
+      echo "deb http://${urls}/${deb_relese} ${ver}-security main restricted universe multiverse" >>/etc/apt/sources.list
+
+      apt-get update || apt-get --allow-releaseinfo-change update
+      apt-get install --no-install-recommends -y linux-image-${item}
+    elif [ "$deb_relese" == 'debian' ]; then
+      echo "deb http://${url}/${deb_relese} ${ver} main" >/etc/apt/sources.list
+      echo "deb-src http://${url}/${deb_relese} ${ver} main" >>/etc/apt/sources.list
+      echo "deb http://${urls}/${deb_relese}-security ${ver}/updates main" >>/etc/apt/sources.list
+      echo "deb-src http://${urls}/${deb_relese}-security ${ver}/updates main" >>/etc/apt/sources.list
+
+         if [ "$deb_ver" == "8" ]; then
+        dpkg -l | grep -q 'linux-base' || {
+          wget --no-check-certificate -qO '/tmp/linux-base_3.5_all.deb' 'http://snapshot.debian.org/archive/debian/20120304T220938Z/pool/main/l/linux-base/linux-base_3.5_all.deb'
+          dpkg -i '/tmp/linux-base_3.5_all.deb'
+        }
+        wget --no-check-certificate -qO '/tmp/linux-image-3.16.0-4-amd64_3.16.43-2+deb8u5_amd64.deb' 'http://snapshot.debian.org/archive/debian/20171008T163152Z/pool/main/l/linux/linux-image-3.16.0-4-amd64_3.16.43-2+deb8u5_amd64.deb'
+        dpkg -i '/tmp/linux-image-3.16.0-4-amd64_3.16.43-2+deb8u5_amd64.deb'
+
+        if [ $? -ne 0 ]; then
+          exit 1
+        fi
+      elif [ "$deb_ver" == "9" ]; then
+        dpkg -l | grep -q 'linux-base' || {
+          wget --no-check-certificate -qO '/tmp/linux-base_4.5_all.deb' 'http://snapshot.debian.org/archive/debian/20160917T042239Z/pool/main/l/linux-base/linux-base_4.5_all.deb'
+          dpkg -i '/tmp/linux-base_4.5_all.deb'
+        }
+        wget --no-check-certificate -qO '/tmp/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb' 'http://snapshot.debian.org/archive/debian/20171224T175424Z/pool/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb'
+        dpkg -i '/tmp/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb'
+        ##备选
+        #https://sys.if.ci/download/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb
+        #http://mirror.cs.uchicago.edu/debian-security/pool/updates/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb
+        #https://debian.sipwise.com/debian-security/pool/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb
+        #http://srv24.dsidata.sk/security.debian.org/pool/updates/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb
+        #https://pubmirror.plutex.de/debian-security/pool/updates/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb
+        #https://packages.mendix.com/debian/pool/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3_amd64.deb
+        #http://snapshot.debian.org/archive/debian/20171224T175424Z/pool/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3+deb9u1_amd64.deb
+        #http://snapshot.debian.org/archive/debian/20171231T180144Z/pool/main/l/linux/linux-image-4.9.0-4-amd64_4.9.65-3_amd64.deb
+        if [ $? -ne 0 ]; then
+	exit 1
+        fi
+      else
+        exit 1
+      fi
+    fi
+    apt-get autoremove -y
+    [ -d '/var/lib/apt/lists' ] && find /var/lib/apt/lists -type f -delete
+  fi
+
+  detele_kernel
+  BBR_grub
+  echo -e "${Tip} ${Red_font_prefix}请检查上面是否有内核信息，无内核千万别重启${Font_color_suffix}"
+  echo -e "${Tip} ${Red_font_prefix}rescue不是正常内核，要排除这个${Font_color_suffix}"
+  echo -e "${Tip} 重启VPS后，请重新运行脚本开启${Red_font_prefix}Lotserver${Font_color_suffix}"
+  check_kernel
+  stty erase '^H' && read -p "需要重启VPS后，才能开启Lotserver，是否现在重启 ? [Y/n] :" yn
+  [ -z "${yn}" ] && yn="y"
+  if [[ $yn == [Yy] ]]; then
+    echo -e "${Info} VPS 重启中..."
+   reboot
+  fi
+  #echo -e "${Tip} 内核安装完毕，请参考上面的信息检查是否安装成功及手动调整内核启动顺序"
 }
 
 #启用BBR
@@ -239,7 +333,7 @@ startbbrfqpie() {
 
 #启用Lotserver
 startlotserver() {
-  remove_bbr_lotserver
+   remove_bbr_lotserver
   if [[ "${release}" == "centos" ]]; then
     yum install ethtool -y
   else
@@ -256,7 +350,8 @@ startlotserver() {
 maxmode=\"1\"" >>/appex/etc/config
   /appex/bin/lotServer.sh restart
   start_menu
-}
+ }
+
 #卸载全部加速
 remove_all(){
 	rm -rf bbrmod
