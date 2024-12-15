@@ -132,8 +132,8 @@ installbbr(){
 		echo -e "${Info} VPS 重启中..."
 		reboot
 	fi
-}
-        
+                }
+
 #安装BBRplus内核
 installbbrplus(){
 	kernel_version="4.14.129-bbrplus"
