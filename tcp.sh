@@ -16,6 +16,31 @@ export PATH
 # PLAIN='\033[0m'
 
 github="raw.githubusercontent.com/ericyiu9819/bbr-plus/master"
+imgurl=""
+headurl=""
+
+Green_font_prefix="\033[32m"
+Red_font_prefix="\033[31m"
+Font_color_suffix="\033[0m"
+Info="${Green_font_prefix}[信息]${Font_color_suffix}"
+Error="${Red_font_prefix}[错误]${Font_color_suffix}"
+Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
+
+if [ -f "/etc/sysctl.d/bbr.conf" ]; then
+  rm -rf /etc/sysctl.d/bbr.conf
+fi
+
+#cn使用fastgit.org的github加速
+check_cn() {
+  geoip=$(wget --user-agent="Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36" --no-check-certificate -qO- https://api.ip.sb/geoip -T 10 | grep "\"country_code\":\"CN\"")
+  if [[ "$geoip" != "" ]]; then
+    # echo "下面使用fastgit.org的加速服务"
+    # echo ${1//github.com/download.fastgit.org}
+    echo https://endpoint.fastgit.org/$1
+  else
+    echo $1
+  fi
+}
 
 
 Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
