@@ -29,7 +29,8 @@ installssr(){
              ./install.sh
 	     }
 #安装新版bbr内核
-installnewbbr(){ kernel_version="5.9.6"
+installnewbbr(){
+  kernel_version="5.9.6"
   bit=$(uname -m)
   rm -rf bbr
   mkdir bbr && cd bbr || exit
