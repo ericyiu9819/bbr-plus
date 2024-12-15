@@ -55,33 +55,36 @@ installssr(){
 	     }
 #安装新版bbr内核
 installnewbbr(){
- kernel_version="5.9.6"
+   kernel_version="5.9.6"
   bit=$(uname -m)
   rm -rf bbr
   mkdir bbr && cd bbr || exit
 
-  if [[ "${release}" == "centos" ]]; then
+  if [[ "${OS_type}" == "CentOS" ]]; then
     if [[ ${version} == "7" ]]; then
       if [[ ${bit} == "x86_64" ]]; then
         echo -e "如果下载地址出错，可能当前正在更新，超过半天还是出错请反馈，大陆自行解决污染问题"
         #github_ver=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}' | awk -F '[_]' '{print $3}')
-        github_tag=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep 'Centos_Kernel' | grep '_latest_bbr_' | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}')
-        github_ver=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep 'headers' | awk -F '"' '{print $4}' | awk -F '[/]' '{print $9}' | awk -F '[-]' '{print $3}')
-        echo -e "获取的版本号为:${github_ver}"
-        kernel_version=$github_ver
-        detele_kernel_head
-        headurl=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep 'headers' | awk -F '"' '{print $4}')
-        imgurl=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep -v 'headers' | grep -v 'devel' | awk -F '"' '{print $4}')
+        #github_tag=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep 'Centos_Kernel' | grep '_latest_bbr_' | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}')
+        #github_ver=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep 'headers' | awk -F '"' '{print $4}' | awk -F '[/]' '{print $9}' | awk -F '[-]' '{print $3}')
+        #check_empty $github_ver
+        #echo -e "获取的版本号为:${Green_font_prefix}${github_ver}${Font_color_suffix}"
+        #kernel_version=$github_ver
+        #detele_kernel_head
+        #headurl=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep 'headers' | awk -F '"' '{print $4}')
+        #imgurl=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep -v 'headers' | grep -v 'devel' | awk -F '"' '{print $4}')
         #headurl=https://github.com/ylx2016/kernel/releases/download/$github_tag/kernel-headers-${github_ver}-1.x86_64.rpm
         #imgurl=https://github.com/ylx2016/kernel/releases/download/$github_tag/kernel-${github_ver}-1.x86_64.rpm
-  headurl=$(check_cn $headurl)
+		
+		headurl=https://github.com/ylx2016/kernel/releases/download/Centos_Kernel_6.1.35_latest_bbr_2023.06.22-0855/kernel-headers-6.1.35-1.x86_64.rpm	
+		imgurl=https://github.com/ylx2016/kernel/releases/download/Centos_Kernel_6.1.35_latest_bbr_2023.06.22-0855/kernel-6.1.35-1.x86_64.rpm
+		
+        check_empty $imgurl
+        headurl=$(check_cn $headurl)
         imgurl=$(check_cn $imgurl)
-        echo -e "正在检查headers下载连接...."
-        checkurl $headurl
-        echo -e "正在检查内核下载连接...."
-        checkurl $imgurl
-        wget -N -O kernel-headers-c7.rpm $headurl
-        wget -N -O kernel-c7.rpm $imgurl
+	
+        download_file $headurl kernel-headers-c7.rpm
+        download_file $imgurl kernel-c7.rpm
         yum install -y kernel-c7.rpm
         yum install -y kernel-headers-c7.rpm
       else
@@ -89,12 +92,13 @@ installnewbbr(){
       fi
     fi
 
-     elif [[ "${release}" == "ubuntu" || "${release}" == "debian" ]]; then
+  elif [[ "${OS_type}" == "Debian" ]]; then
     if [[ ${bit} == "x86_64" ]]; then
       echo -e "如果下载地址出错，可能当前正在更新，超过半天还是出错请反馈，大陆自行解决污染问题"
       github_tag=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep 'Debian_Kernel' | grep '_latest_bbr_' | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}')
       github_ver=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'deb' | grep 'headers' | awk -F '"' '{print $4}' | awk -F '[/]' '{print $9}' | awk -F '[-]' '{print $3}' | awk -F '[_]' '{print $1}')
-      echo -e "获取的版本号为:${github_ver}"
+      check_empty $github_ver
+      echo -e "获取的版本号为:${Green_font_prefix}${github_ver}${Font_color_suffix}"
       kernel_version=$github_ver
       detele_kernel_head
       headurl=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'deb' | grep 'headers' | awk -F '"' '{print $4}')
@@ -104,19 +108,16 @@ installnewbbr(){
 
       headurl=$(check_cn $headurl)
       imgurl=$(check_cn $imgurl)
-      echo -e "正在检查headers下载连接...."
-      checkurl $headurl
-      echo -e "正在检查内核下载连接...."
-      checkurl $imgurl
-      wget -N -O linux-headers-d10.deb $headurl
-      wget -N -O linux-image-d10.deb $imgurl
+
+      download_file $headurl linux-headers-d10.deb
+      download_file $imgurl linux-image-d10.deb
       dpkg -i linux-image-d10.deb
       dpkg -i linux-headers-d10.deb
     elif [[ ${bit} == "aarch64" ]]; then
       echo -e "如果下载地址出错，可能当前正在更新，超过半天还是出错请反馈，大陆自行解决污染问题"
-       github_tag=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep 'Debian_Kernel' | grep '_arm64_' | grep '_bbr_' | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}')
+      github_tag=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep 'Debian_Kernel' | grep '_arm64_' | grep '_bbr_' | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}')
       github_ver=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'deb' | grep 'headers' | awk -F '"' '{print $4}' | awk -F '[/]' '{print $9}' | awk -F '[-]' '{print $3}' | awk -F '[_]' '{print $1}')
-      echo -e "获取的版本号为:${github_ver}"
+      echo -e "获取的版本号为:${Green_font_prefix}${github_ver}${Font_color_suffix}"
       kernel_version=$github_ver
       detele_kernel_head
       headurl=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'deb' | grep 'headers' | awk -F '"' '{print $4}')
@@ -124,28 +125,35 @@ installnewbbr(){
       #headurl=https://github.com/ylx2016/kernel/releases/download/$github_tag/linux-headers-${github_ver}_${github_ver}-1_amd64.deb
       #imgurl=https://github.com/ylx2016/kernel/releases/download/$github_tag/linux-image-${github_ver}_${github_ver}-1_amd64.deb
 
+      check_empty $imgurl
       headurl=$(check_cn $headurl)
       imgurl=$(check_cn $imgurl)
-      echo -e "正在检查headers下载连接...."
-      checkurl $headurl
-      echo -e "正在检查内核下载连接...."
-      checkurl $imgurl
-      wget -N -O linux-headers-d10.deb $headurl
-      wget -N -O linux-image-d10.deb $imgurl
+
+      download_file $headurl linux-headers-d10.deb
+      download_file $imgurl linux-image-d10.deb
       dpkg -i linux-image-d10.deb
       dpkg -i linux-headers-d10.deb
-      else
+    else
       echo -e "${Error} 不支持x86_64及arm64/aarch64以外的系统 !" && exit 1
     fi
   fi
 
   cd .. && rm -rf bbr
 
+  detele_kernel
   BBR_grub
-  echo -e "${Tip} 内核安装完毕，请参考上面的信息检查是否安装成功,默认从排第一的高版本内核启动"
+  echo -e "${Tip} ${Red_font_prefix}请检查上面是否有内核信息，无内核千万别重启${Font_color_suffix}"
+  echo -e "${Tip} ${Red_font_prefix}rescue不是正常内核，要排除这个${Font_color_suffix}"
+  echo -e "${Tip} 重启VPS后，请重新运行脚本开启${Red_font_prefix}BBR${Font_color_suffix}"
   check_kernel
+  stty erase '^H' && read -p "需要重启VPS后，才能开启BBR，是否现在重启 ? [Y/n] :" yn
+  [ -z "${yn}" ] && yn="y"
+  if [[ $yn == [Yy] ]]; then
+    echo -e "${Info} VPS 重启中..."
+    reboot
+  fi
+  #echo -e "${Tip} 内核安装完毕，请参考上面的信息检查是否安装成功及手动调整内核启动顺序"
 }
-  
 #安装bbr-v3
 installbbr-v3(){
              wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3/master/bbr-v3.sh"
