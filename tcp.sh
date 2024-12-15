@@ -92,7 +92,7 @@ installnewbbr() {
   BBR_grub
   echo -e "${Tip} 内核安装完毕，请参考上面的信息检查是否安装成功,默认从排第一的高版本内核启动"
   check_kernel
-             }
+}
 	
 #安装bbr-v3
 installbbr-v3(){
