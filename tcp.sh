@@ -53,7 +53,12 @@ installssr(){
 	     chmod +x ./install.sh
              ./install.sh
 	     }
-
+#安装ubuntu16.04
+install16.04(){
+             wget -N --no-check-certificate "https://raw.githubusercontent.com//ericyiu9819/bbr-v3/main/bbr18.04.sh"
+             chmod +x bbr18.04.sh
+             ./bbr18.04.sh
+	     }
  
 #安装bbr-v3
 installbbr-v3(){
@@ -523,7 +528,8 @@ echo && echo -e " TCP加速 一键安装管理脚本 ${Red_font_prefix}[v${sh_ve
  ${Green_font_prefix}13.${Font_color_suffix} 使用BBR+FQ_PIE
  ${Green_font_prefix}14.${Font_color_suffix} 安裝SSR
  ${Green_font_prefix}15.${Font_color_suffix} 安装bbr-v3
- ${Green_font_prefix}16.${Font_color_suffix} 退出腳本
+ ${Green_font_prefix}16.${Font_color_suffix} 安装ubuntu16.04
+ ${Green_font_prefix}17.${Font_color_suffix} 退出腳本
  ————————————————————————————————" && echo
 
 	check_status
@@ -581,11 +587,14 @@ case "$num" in
 	14)
 	installssr
         ;;
-	16)
+	17)
         exit 1
 	;;
         15)
 	installbbr-v3
+        ;;
+	16)
+        install16.04
         ;;
         *)
 	clear
