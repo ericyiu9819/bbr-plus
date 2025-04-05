@@ -59,6 +59,12 @@ installbbrplus_cake(){
              chmod +x bbrplus_cake.sh
              ./bbrplus_cake.sh
 	     }
+#安装bbr_cake
+installbbr_cake(){
+             wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-v3/main/bbr_cake.sh"
+             chmod +x bbr_cake.sh
+             ./bbr_cake.sh
+	     }
  
 #安装bbr-v3
 installbbr-v3(){
@@ -589,7 +595,7 @@ case "$num" in
         exit 1
 	;;
         15)
-	installbbr-v3
+	installbbr_cake
         ;;
 	16)
         installbbrplus_cake
