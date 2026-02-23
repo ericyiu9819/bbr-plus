@@ -81,7 +81,7 @@ installkejilion(){
 
 #安装grok加速
 installgroktcp(){
-            wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/sh/master/install_grokaccel.sh"
+            wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install_grokaccel.sh"
 			chmod +x install_grokaccel.sh
 			./install_grokaccel.sh
         }
