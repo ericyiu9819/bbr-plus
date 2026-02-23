@@ -84,7 +84,7 @@ installgroktcp(){
             wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/sh/master/install_grokaccel.sh"
 			chmod +x install_grokaccel.sh
 			./install_grokaccel.sh
-
+        }
 #安装BBR内核
 installbbr(){
 	kernel_version="4.11.8"
