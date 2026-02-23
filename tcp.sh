@@ -81,10 +81,23 @@ installkejilion(){
 
 #安装grok加速
 installgroktcp(){
-            wget -N --no-check-certificate "https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install_grokaccel.sh"
-			chmod +x install_grokaccel.sh
-			./install_grokaccel.sh
-        }
+    echo -e "${Info} 正在从 GitHub 下载 GrokAccel v2.0 Universal..."
+    wget -N --no-check-certificate -O /tmp/install_grokaccel.sh \
+        "https://raw.githubusercontent.com/ericyiu9819/bbr-plus/master/install_grokaccel.sh"
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${Error} 下载失败！请检查网络或稍后重试。"
+        return 1
+    fi
+    
+    echo -e "${Info} 下载完成，正在安装 GrokAccel..."
+    chmod +x /tmp/install_grokaccel.sh
+    /tmp/install_grokaccel.sh
+    
+    # 可选：安装完自动清理临时文件
+    rm -f /tmp/install_grokaccel.sh 2>/dev/null
+    echo -e "${Info} GrokAccel 安装流程已完成！"
+}
 #安装BBR内核
 installbbr(){
 	kernel_version="4.11.8"
