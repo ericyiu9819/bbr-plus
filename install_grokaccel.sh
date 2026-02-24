@@ -1,81 +1,13 @@
 #!/bin/bash
-# AdaTCP GitHub 一鍵建立腳本
-# 使用方法：bash setup-adatcp-github.sh 你的GitHub用戶名
+# GrokAccel / AdaTCP 全日實時自適應版 - VPS 一鍵安裝腳本
+# 適用於你的 repo: https://github.com/ericyiu9819/bbr-plus
 
 set -e
+echo "🚀 GrokAccel 全日實時自適應版 一鍵安裝開始（視頻+下載專用）..."
 
-if [ -z "$1" ]; then
-  echo "❌ 使用方式：bash setup-adatcp-github.sh 你的GitHub用戶名"
-  echo "範例：bash setup-adatcp-github.sh myusername"
-  exit 1
-fi
-
-USERNAME="$1"
-echo "🚀 正在為 ${USERNAME} 建立 AdaTCP GitHub 專案..."
-
-mkdir -p AdaTCP
-cd AdaTCP
-
-# ==================== 1. README.md ====================
-cat > README.md << EOF
-# AdaTCP - 全日實時自適應 TCP 加速器
-
-專為「看視頻 + 下載」設計的開源 VPS TCP 加速工具  
-每 12~40 秒根據真實 RTT + 丟包自動調整 4 檔模式，永遠處於最佳狀態。
-
-### 一鍵安裝
-\`\`\`bash
-curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/install.sh | sudo bash
-\`\`\`
-
-### 特色
-- 全日實時自適應（優秀/一般/惡劣/嚴重模式）
-- 固定 BBR + 動態 BDP（2.2x~4.5x）
-- 自動調整調整頻率與重傳參數
-- 輕量、無依賴、純 Python
-
-Made with ❤️ by Grok
-EOF
-
-# ==================== 2. install.sh ====================
-cat > install.sh << EOF
-#!/bin/bash
-set -e
-echo "🚀 AdaTCP 全日實時自適應版 一鍵安裝..."
-
+# 建立目錄與主程式
 sudo mkdir -p /opt/adatcp
-sudo curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/adatcp.py -o /opt/adatcp/adatcp.py
-sudo chmod +x /opt/adatcp/adatcp.py
-
-sudo curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/adatcp.service -o /etc/systemd/system/adatcp.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now adatcp
-
-echo "✅ 安裝完成！"
-echo "即時查看自適應效果： sudo journalctl -u adatcp -f"
-EOF
-chmod +x install.sh
-
-# ==================== 3. adatcp.service ====================
-cat > adatcp.service << EOF
-[Unit]
-Description=AdaTCP 全日實時自適應版 TCP 加速器
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 /opt/adatcp/adatcp.py
-Restart=always
-RestartSec=10
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# ==================== 4. adatcp.py (最新全日自適應版) ====================
-cat > adatcp.py << 'PYEOF'
+sudo cat > /opt/adatcp/adatcp.py << 'PYEOF'
 #!/usr/bin/env python3
 import subprocess
 import time
@@ -182,15 +114,29 @@ if __name__ == "__main__":
     main()
 PYEOF
 
-echo "✅ 所有檔案已建立完成！"
-echo "資料夾路徑：$(pwd)"
-echo ""
-echo "接下來你可以："
-echo "1. cd AdaTCP"
-echo "2. git init && git add . && git commit -m 'Initial commit'"
-echo "3. git remote add origin https://github.com/${USERNAME}/AdaTCP.git"
-echo "4. git push -u origin main"
-echo ""
-echo "或者直接用 GitHub 網頁上傳整個 AdaTCP 資料夾。"
-echo "你的 repo 一鍵安裝指令就是："
-echo "curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/install.sh | sudo bash"
+sudo chmod +x /opt/adatcp/adatcp.py
+
+# 建立 systemd 服務
+sudo cat > /etc/systemd/system/adatcp.service << EOF
+[Unit]
+Description=AdaTCP 全日實時自適應版 TCP 加速器
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/adatcp/adatcp.py
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now adatcp
+
+echo "✅ 安裝完成！AdaTCP 已自動運行"
+echo "立即查看即時自適應效果："
+echo "   sudo journalctl -u adatcp -f"
+echo "   sudo systemctl status adatcp"
