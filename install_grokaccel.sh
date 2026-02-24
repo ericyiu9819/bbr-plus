@@ -1,168 +1,196 @@
 #!/bin/bash
-# GrokAccel v2.0 Universal - 适配任何 Linux 系统
-# Grok 2026 独家优化版
-set -euo pipefail
+# AdaTCP GitHub 一鍵建立腳本
+# 使用方法：bash setup-adatcp-github.sh 你的GitHub用戶名
 
-echo -e "\033[1;32m🚀 GrokAccel v2.0 Universal 开始安装...\033[0m"
+set -e
 
-# 1. Root 检查
-if [ "$(id -u)" -ne 0 ]; then
-  echo -e "\033[1;31m❌ 请用 root 或 sudo 执行！\033[0m"
+if [ -z "$1" ]; then
+  echo "❌ 使用方式：bash setup-adatcp-github.sh 你的GitHub用戶名"
+  echo "範例：bash setup-adatcp-github.sh myusername"
   exit 1
 fi
 
-# 2. 备份原配置
-BACKUP_DIR="/etc/grokaccel_backup_$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$BACKUP_DIR"
-cp -f /etc/sysctl.conf "$BACKUP_DIR/" 2>/dev/null || true
-cp -rf /etc/sysctl.d/ "$BACKUP_DIR/" 2>/dev/null || true
-echo -e "\033[1;32m✅ 配置已备份到：$BACKUP_DIR\033[0m"
+USERNAME="$1"
+echo "🚀 正在為 ${USERNAME} 建立 AdaTCP GitHub 專案..."
 
-# 3. 自动安装依赖
-echo -e "\033[1;33m📦 正在安装依赖 (python3 curl iproute2)...\033[0m"
-PACKAGES="python3 curl iproute2"
+mkdir -p AdaTCP
+cd AdaTCP
 
-if command -v apt-get >/dev/null 2>&1; then
-  apt-get update -qq && apt-get install -y $PACKAGES
-elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y $PACKAGES
-elif command -v yum >/dev/null 2>&1; then
-  yum install -y $PACKAGES
-elif command -v pacman >/dev/null 2>&1; then
-  pacman -Syu --needed --noconfirm $PACKAGES
-elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache $PACKAGES
-elif command -v zypper >/dev/null 2>&1; then
-  zypper install -y $PACKAGES
-else
-  echo -e "\033[1;33m⚠️ 未知包管理器，请手动确保 python3、curl、iproute2 已安装\033[0m"
-fi
+# ==================== 1. README.md ====================
+cat > README.md << EOF
+# AdaTCP - 全日實時自適應 TCP 加速器
 
-# 4. 基础 TCP 优化参数（适用于所有内核）
-cat > /etc/sysctl.d/99-grokaccel-base.conf << 'EOF'
-net.core.rmem_max = 67108864
-net.core.wmem_max = 67108864
-net.core.rmem_default = 1048576
-net.core.wmem_default = 1048576
-net.ipv4.tcp_rmem = 4096 87380 67108864
-net.ipv4.tcp_wmem = 4096 65536 67108864
-net.ipv4.tcp_congestion_control = bbr
-net.core.default_qdisc = fq
-net.ipv4.tcp_fastopen = 3
-net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_window_scaling = 1
-net.ipv4.tcp_sack = 1
-net.ipv4.tcp_timestamps = 0
-net.ipv4.tcp_syn_retries = 2
-net.ipv4.tcp_synack_retries = 2
-net.ipv4.tcp_max_syn_backlog = 8192
-net.core.somaxconn = 8192
-vm.swappiness = 10
+專為「看視頻 + 下載」設計的開源 VPS TCP 加速工具  
+每 12~40 秒根據真實 RTT + 丟包自動調整 4 檔模式，永遠處於最佳狀態。
+
+### 一鍵安裝
+\`\`\`bash
+curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/install.sh | sudo bash
+\`\`\`
+
+### 特色
+- 全日實時自適應（優秀/一般/惡劣/嚴重模式）
+- 固定 BBR + 動態 BDP（2.2x~4.5x）
+- 自動調整調整頻率與重傳參數
+- 輕量、無依賴、純 Python
+
+Made with ❤️ by Grok
 EOF
 
-sysctl -p /etc/sysctl.d/99-grokaccel-base.conf >/dev/null 2>&1 || true
+# ==================== 2. install.sh ====================
+cat > install.sh << EOF
+#!/bin/bash
+set -e
+echo "🚀 AdaTCP 全日實時自適應版 一鍵安裝..."
 
-# 5. 加载模块
-modprobe tcp_bbr 2>/dev/null || true
-modprobe tcp_hybla 2>/dev/null || true
+sudo mkdir -p /opt/adatcp
+sudo curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/adatcp.py -o /opt/adatcp/adatcp.py
+sudo chmod +x /opt/adatcp/adatcp.py
 
-# 6. 创建自适应守护进程（随机间隔 + 日志）
-cat > /usr/local/bin/grokaccel_daemon.py << 'PYEOF'
-#!/usr/bin/env python3
-import subprocess, re, time, os, random, logging
-from collections import deque
+sudo curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/adatcp.service -o /etc/systemd/system/adatcp.service
 
-logging.basicConfig(filename='/var/log/grokaccel.log', level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+sudo systemctl daemon-reload
+sudo systemctl enable --now adatcp
 
-print("GrokAccel v2.0 Universal 守护进程启动...")
-logging.info("守护进程启动")
+echo "✅ 安裝完成！"
+echo "即時查看自適應效果： sudo journalctl -u adatcp -f"
+EOF
+chmod +x install.sh
 
-TARGETS = ['223.5.5.5', '180.76.76.76', '8.8.8.8']
-HISTORY = deque(maxlen=10)
-
-def ping_rtt(host):
-    try:
-        out = subprocess.check_output(['ping', '-c', '3', '-W', '2', host], stderr=subprocess.STDOUT).decode()
-        rtt = float(re.search(r'rtt min/avg/max/mdev = .*?/(.*?)/', out).group(1)) if re.search(r'rtt', out) else 999
-        loss = float(re.search(r'(\d+)% packet loss', out).group(1)) if re.search(r'packet loss', out) else 0
-        return rtt, loss
-    except:
-        return 999, 100
-
-def grok_predict_score():
-    if not HISTORY: return 50, 150, 5
-    avg_rtt = sum(r for r,l in HISTORY) / len(HISTORY)
-    avg_loss = sum(l for r,l in HISTORY) / len(HISTORY)
-    score = max(0, 100 - avg_rtt * 0.55 - avg_loss * 7)
-    return score, avg_rtt, avg_loss
-
-def adjust_tcp(score, rtt, loss):
-    if score > 75:
-        os.system("sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1")
-        os.system("sysctl -w net.core.rmem_max=134217728 >/dev/null 2>&1")
-        logging.info(f"🌟 极致模式 RTT:{rtt:.1f}ms")
-    elif score > 45:
-        os.system("sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1")
-        logging.info(f"⚡ 平衡模式 RTT:{rtt:.1f}ms")
-    else:
-        os.system("sysctl -w net.ipv4.tcp_congestion_control=hybla >/dev/null 2>&1")
-        logging.info(f"🛡️ 抗抖模式 RTT:{rtt:.1f}ms 丢包:{loss:.1f}%")
-
-while True:
-    for t in TARGETS:
-        r, l = ping_rtt(t)
-        HISTORY.append((r, l))
-        time.sleep(0.3)
-    score, rtt, loss = grok_predict_score()
-    adjust_tcp(score, rtt, loss)
-    sleep_time = random.randint(20, 55)   # 随机间隔，更低调
-    time.sleep(sleep_time)
-PYEOF
-
-chmod +x /usr/local/bin/grokaccel_daemon.py
-
-# 7. 安装服务（systemd 优先）
-if command -v systemctl >/dev/null 2>&1; then
-  cat > /etc/systemd/system/grokaccel.service << 'EOF'
+# ==================== 3. adatcp.service ====================
+cat > adatcp.service << EOF
 [Unit]
-Description=GrokAccel v2.0 Universal TCP Accelerator
+Description=AdaTCP 全日實時自適應版 TCP 加速器
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/bin/grokaccel_daemon.py
+ExecStart=/usr/bin/python3 /opt/adatcp/adatcp.py
 Restart=always
-RestartSec=3
-StandardOutput=journal
-StandardError=journal
+RestartSec=10
+User=root
 
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
-  systemctl enable --now grokaccel.service
-  echo -e "\033[1;32m✅ 已安装为 systemd 服务\033[0m"
-else
-  # 非 systemd 回退方案
-  cat > /usr/local/bin/grokaccel_start.sh << 'EOF'
-#!/bin/bash
-nohup /usr/bin/python3 /usr/local/bin/grokaccel_daemon.py >> /var/log/grokaccel.log 2>&1 &
-echo $! > /var/run/grokaccel.pid
-EOF
-  chmod +x /usr/local/bin/grokaccel_start.sh
-  /usr/local/bin/grokaccel_start.sh
-  (crontab -l 2>/dev/null | grep -v grokaccel; echo "@reboot /usr/local/bin/grokaccel_start.sh") | crontab -
-  echo -e "\033[1;32m✅ 非 systemd 系统：已用 nohup + crontab 开机自启\033[0m"
-fi
 
-echo -e "\033[1;32m🎉 GrokAccel v2.0 Universal 安装完成！\033[0m"
-echo "📊 查看日志：tail -f /var/log/grokaccel.log"
-echo "🔍 systemd 状态（如果适用）：systemctl status grokaccel"
-echo "🛑 停止服务：systemctl stop grokaccel   （或 pkill -f grokaccel_daemon）"
+# ==================== 4. adatcp.py (最新全日自適應版) ====================
+cat > adatcp.py << 'PYEOF'
+#!/usr/bin/env python3
+import subprocess
+import time
+import re
+import statistics
+import logging
+import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("/var/log/adatcp.log"), logging.StreamHandler()]
+)
+
+def run_cmd(cmd, check=True):
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return ""
+
+def get_interfaces():
+    out = run_cmd("ip -o link show | awk -F': ' '{print $2}'")
+    return [i.split()[0] for i in out.splitlines() if not i.startswith("lo")]
+
+def get_link_speed(iface):
+    out = run_cmd(f"ethtool {iface} 2>/dev/null | grep -i speed")
+    match = re.search(r"(\d+)Mb/s", out)
+    return int(match.group(1)) if match else 1000
+
+def get_rtt_and_loss():
+    hosts = ["8.8.8.8", "1.1.1.1", "223.5.5.5", "203.80.96.10", "www.google.com"]
+    rtts, losses = [], []
+    for host in hosts:
+        out = run_cmd(f"ping -c 6 -i 0.2 -W 2 {host} 2>/dev/null")
+        loss_match = re.search(r"(\d+)% packet loss", out)
+        loss = int(loss_match.group(1)) if loss_match else 100
+        rtt_match = re.search(r"/avg/ = .*?/(.*?)/", out)
+        if rtt_match:
+            try: rtts.append(float(rtt_match.group(1)))
+            except: pass
+        losses.append(loss)
+    return statistics.mean(rtts) if rtts else 80.0, statistics.mean(losses) if losses else 0
+
+def estimate_bdp(rtt_ms, bw_mbps):
+    rtt_s = rtt_ms / 1000.0
+    bw_bps = bw_mbps * 1_000_000 / 8.0
+    return int(bw_bps * rtt_s * 1.5)
+
+def get_adaptive_params(rtt, loss):
+    score = (rtt / 100.0) + (loss * 2.0)
+    if score > 6.0:
+        return "嚴重模式", 4.5, 12, 7, 20
+    elif score > 4.0:
+        return "惡劣模式", 3.8, 15, 6, 18
+    elif score > 2.5:
+        return "一般模式", 2.8, 25, 4, 15
+    else:
+        return "優秀模式", 2.2, 40, 3, 10
+
+def decide_and_get_params(rtt, loss, bdp, assumed_bw):
+    params = {}
+    params["net.ipv4.tcp_congestion_control"] = "bbr"
+    mode, multiplier, sleep_sec, retries1, retries2 = get_adaptive_params(rtt, loss)
+    max_buf = max(64 * 1024 * 1024, int(bdp * multiplier))
+    params["net.ipv4.tcp_rmem"] = f"4096 131072 {max_buf}"
+    params["net.ipv4.tcp_wmem"] = f"4096 131072 {max_buf}"
+    params["net.core.rmem_max"] = str(max_buf)
+    params["net.core.wmem_max"] = str(max_buf)
+    params["net.core.default_qdisc"] = "fq_codel"
+    params["net.ipv4.tcp_retries1"] = str(retries1)
+    params["net.ipv4.tcp_retries2"] = str(retries2)
+    params["net.ipv4.tcp_fastopen"] = "3"
+    params["net.ipv4.tcp_max_syn_backlog"] = "8192"
+    params["net.core.somaxconn"] = "8192"
+    return params, mode, sleep_sec
+
+def apply_params(params):
+    for k, v in params.items():
+        run_cmd(f"sysctl -w {k}={v}", check=False)
+    for iface in get_interfaces()[:1]:
+        run_cmd(f"tc qdisc replace dev {iface} root fq_codel 2>/dev/null || true")
+
+def main():
+    if os.geteuid() != 0:
+        print("❌ 請用 root 或 sudo 執行")
+        exit(1)
+    logging.info("🚀 AdaTCP 全日實時自適應版啟動（視頻+下載專用）")
+    run_cmd("modprobe tcp_bbr 2>/dev/null || true")
+    assumed_bw = max((get_link_speed(i) for i in get_interfaces()), default=1000)
+    logging.info(f"偵測到最大鏈路速度: {assumed_bw} Mbps")
+    while True:
+        try:
+            rtt, loss = get_rtt_and_loss()
+            bdp = estimate_bdp(rtt, assumed_bw)
+            params, mode, sleep_sec = decide_and_get_params(rtt, loss, bdp, assumed_bw)
+            apply_params(params)
+            logging.info(f"✅ {mode} 調整完成 | RTT={rtt:.1f}ms | 丟包={loss:.1f}% | BDP≈{bdp//(1024*1024)}MB | CC=BBR | 下一輪 {sleep_sec}s")
+        except Exception as e:
+            logging.error(f"迴圈異常: {e}")
+        time.sleep(sleep_sec)
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+echo "✅ 所有檔案已建立完成！"
+echo "資料夾路徑：$(pwd)"
 echo ""
-echo "一键卸载命令（复制执行）："
-echo "systemctl stop grokaccel && systemctl disable grokaccel 2>/dev/null || true; rm -f /etc/sysctl.d/99-grokaccel* /usr/local/bin/grokaccel* /etc/systemd/system/grokaccel.service /var/log/grokaccel.log; crontab -l | grep -v grokaccel | crontab -; sysctl -p"
+echo "接下來你可以："
+echo "1. cd AdaTCP"
+echo "2. git init && git add . && git commit -m 'Initial commit'"
+echo "3. git remote add origin https://github.com/${USERNAME}/AdaTCP.git"
+echo "4. git push -u origin main"
 echo ""
-echo "建议重启 VPS：reboot"
-echo "这是目前市面上最通用的版本了！装完告诉我你的系统和效果，我还能继续给你加多路径、仪表盘等功能～"
+echo "或者直接用 GitHub 網頁上傳整個 AdaTCP 資料夾。"
+echo "你的 repo 一鍵安裝指令就是："
+echo "curl -sSL https://raw.githubusercontent.com/${USERNAME}/AdaTCP/main/install.sh | sudo bash"
