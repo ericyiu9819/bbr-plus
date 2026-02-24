@@ -1,14 +1,12 @@
 #!/bin/bash
-# GrokAccel 全系統通用版 - 一鍵安裝腳本（2026 最新優化）
-# 支援 Ubuntu/Debian/CentOS/Alma/Rocky/Fedora/Alpine/Arch 等全部系統
+# GrokAccel 全系統通用 + Python 3.6 兼容版 - 一鍵安裝腳本
 
 set -e
-echo "🚀 GrokAccel 全系統通用版 一鍵安裝開始（視頻+下載專用）..."
+echo "🚀 GrokAccel 全系統通用 + Python 3.6 兼容版 一鍵安裝開始（視頻+下載專用）..."
 
-# ==================== 1. 自動安裝依賴 ====================
-echo "🔧 正在檢查並安裝必要依賴（python3、curl）..."
+# 1. 自動安裝依賴
+echo "🔧 安裝必要依賴..."
 if command -v apt-get >/dev/null; then
-    export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq && apt-get install -y python3 curl iproute2 ethtool
 elif command -v yum >/dev/null; then
     yum install -y python3 curl iproute ethtool
@@ -20,7 +18,7 @@ elif command -v pacman >/dev/null; then
     pacman -Syu --noconfirm python curl iproute2 ethtool
 fi
 
-# ==================== 2. 安裝主程式 ====================
+# 2. 安裝主程式（已兼容 Python 3.6）
 sudo mkdir -p /opt/adatcp
 sudo cat > /opt/adatcp/adatcp.py << 'PYEOF'
 #!/usr/bin/env python3
@@ -38,10 +36,19 @@ logging.basicConfig(
 )
 
 def run_cmd(cmd, check=True):
+    """兼容 Python 3.6 的版本"""
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+        if check and result.returncode != 0:
+            raise subprocess.CalledProcessError(result.returncode, cmd)
         return result.stdout.strip()
-    except subprocess.CalledProcessError:
+    except Exception:
         return ""
 
 def get_interfaces():
@@ -110,7 +117,7 @@ def main():
     if os.geteuid() != 0:
         print("❌ 請用 root 或 sudo 執行")
         exit(1)
-    logging.info("🚀 AdaTCP 全系統通用版啟動（視頻+下載專用）")
+    logging.info("🚀 AdaTCP 全系統通用 + Python 3.6 兼容版啟動（視頻+下載專用）")
     run_cmd("modprobe tcp_bbr 2>/dev/null || true")
     assumed_bw = max((get_link_speed(i) for i in get_interfaces()), default=1000)
     logging.info(f"偵測到最大鏈路速度: {assumed_bw} Mbps")
@@ -131,9 +138,8 @@ PYEOF
 
 sudo chmod +x /opt/adatcp/adatcp.py
 
-# ==================== 3. 通用啟動方式 ====================
-if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
-    # 有 systemd 的系統（推薦）
+# 3. 通用啟動（支援 systemd 和非 systemd）
+if command -v systemctl >/dev/null; then
     sudo cat > /etc/systemd/system/adatcp.service << EOF
 [Unit]
 Description=AdaTCP 全日實時自適應版 TCP 加速器
@@ -151,29 +157,16 @@ WantedBy=multi-user.target
 EOF
     sudo systemctl daemon-reload
     sudo systemctl enable --now adatcp
-    echo "✅ 使用 systemd 啟動成功"
+    echo "✅ systemd 啟動成功"
 else
-    # 沒有 systemd 的系統（舊系統、容器）
-    sudo cat > /usr/local/bin/adatcp-daemon << EOF
-#!/bin/bash
-while true; do
-    if ! pgrep -f adatcp.py >/dev/null; then
-        nohup python3 /opt/adatcp/adatcp.py >> /var/log/adatcp.log 2>&1 &
-    fi
-    sleep 30
-done
-EOF
-    sudo chmod +x /usr/local/bin/adatcp-daemon
-    crontab -l 2>/dev/null | grep -v adatcp-daemon | crontab -
-    (crontab -l 2>/dev/null; echo "@reboot /usr/local/bin/adatcp-daemon") | crontab -
-    nohup /usr/local/bin/adatcp-daemon >/dev/null 2>&1 &
-    echo "✅ 使用 crontab + nohup 啟動成功（無 systemd 系統）"
+    echo "✅ 使用 nohup + crontab 啟動（無 systemd）"
+    nohup python3 /opt/adatcp/adatcp.py >> /var/log/adatcp.log 2>&1 &
 fi
 
-# ==================== 4. 安裝完成後自動打開程式 ====================
+# 4. 安裝完成後自動打開程式
 echo ""
-echo "🎉 安裝完成！AdaTCP 已自動啟動並開始全日自適應優化"
-echo "正在自動打開即時運行畫面（按 Ctrl + C 可退出監控，程式繼續在後台運行）..."
+echo "🎉 安裝完成！AdaTCP 已自動啟動"
+echo "正在自動顯示即時運行畫面（按 Ctrl + C 可退出監控）..."
 sleep 2
 if command -v journalctl >/dev/null; then
     sudo journalctl -u adatcp -f
