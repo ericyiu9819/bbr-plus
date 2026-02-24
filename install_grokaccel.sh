@@ -1,11 +1,11 @@
 #!/bin/bash
-# GrokAccel / AdaTCP 全日實時自適應版 - VPS 一鍵安裝腳本
-# 適用於你的 repo: https://github.com/ericyiu9819/bbr-plus
+# GrokAccel / AdaTCP 全日實時自適應版 - VPS 一鍵安裝腳本（自動打開版）
+# 專為 ericyiu9819/bbr-plus 優化
 
 set -e
 echo "🚀 GrokAccel 全日實時自適應版 一鍵安裝開始（視頻+下載專用）..."
 
-# 建立目錄與主程式
+# 1. 安裝主程式
 sudo mkdir -p /opt/adatcp
 sudo cat > /opt/adatcp/adatcp.py << 'PYEOF'
 #!/usr/bin/env python3
@@ -116,7 +116,7 @@ PYEOF
 
 sudo chmod +x /opt/adatcp/adatcp.py
 
-# 建立 systemd 服務
+# 2. 建立 systemd 服務
 sudo cat > /etc/systemd/system/adatcp.service << EOF
 [Unit]
 Description=AdaTCP 全日實時自適應版 TCP 加速器
@@ -136,7 +136,9 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now adatcp
 
-echo "✅ 安裝完成！AdaTCP 已自動運行"
-echo "立即查看即時自適應效果："
-echo "   sudo journalctl -u adatcp -f"
-echo "   sudo systemctl status adatcp"
+# ==================== 優化重點：自動打開程式 ====================
+echo ""
+echo "✅ 安裝完成！AdaTCP 已自動啟動並開始全日自適應優化"
+echo "正在自動打開即時運行畫面（按 Ctrl + C 可退出監控，程式會繼續在後台運行）..."
+sleep 2
+sudo journalctl -u adatcp -f
