@@ -1,176 +1,382 @@
 #!/usr/bin/env bash
-# Adaptive TCP Optimizer for Ubuntu/Debian - 最終最優穩定版
-# 功能：自動Ping + ss真實指標 + 趨勢學習 + Hysteresis + 硬安全保護
-# 使用：sudo bash adaptive-tcp.sh
-
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-log() { echo -e "${CYAN}[INFO]${NC} $*"; }
-success() { echo -e "${GREEN}[ OK ]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
+NAME="vps-tcp-xray"
+CONF="/etc/sysctl.d/99-${NAME}.conf"
+STATE_DIR="/var/lib/${NAME}"
+STATE="${STATE_DIR}/state"
+LOG="/var/log/${NAME}.log"
+MONITOR="/usr/local/bin/${NAME}-monitor"
+SERVICE="/etc/systemd/system/${NAME}.service"
+TIMER="/etc/systemd/system/${NAME}.timer"
 
-MONITOR_SCRIPT="/usr/local/bin/tcp-adaptive-monitor.sh"
-HISTORY_CSV="/var/log/tcp-adaptive-history.csv"
-SERVICE_NAME="tcp-adaptive-monitor"
-TIMER_NAME="tcp-adaptive-monitor.timer"
+TARGET="${TARGET:-1.1.1.1}"
+INTERVAL="${INTERVAL:-5min}"
+MODE="${MODE:-aggressive}"   # safe | aggressive
 
-# ====================== 檢測 ======================
-detect_system() {
-    . /etc/os-release
-    log "系統: ${PRETTY_NAME}"
+MiB=$((1024 * 1024))
+MIN_BUF=$((32 * MiB))
+MID_BUF=$((128 * MiB))
+HIGH_BUF=$((256 * MiB))
+MAX_BUF=$((512 * MiB))
+
+log() {
+    echo "[$(date '+%F %T')] $*" | tee -a "$LOG"
 }
 
-detect_kernel_and_memory() {
-    KVER=$(uname -r)
-    if [[ $(echo "$KVER" | cut -d. -f1) -ge 5 || $(echo "$KVER" | cut -d. -f1-2) == "4.9" ]]; then
-        BBR_MODE="bbr"
+die() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
+
+need_root() {
+    [[ "${EUID}" -eq 0 ]] || die "run as root"
+}
+
+detect_iface() {
+    ip route get "$TARGET" 2>/dev/null | awk '
+        /dev/ {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "dev") {
+                    print $(i + 1)
+                    exit
+                }
+            }
+        }
+    '
+}
+
+detect_cc() {
+    modprobe tcp_bbr 2>/dev/null || true
+
+    if sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
+        echo "bbr"
     else
-        BBR_MODE="cubic"
+        echo "cubic"
     fi
+}
 
-    MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-    if [[ $MEM_MB -le 2048 ]]; then
-        BASE_MAX=67108864
-    elif [[ $MEM_MB -le 8192 ]]; then
-        BASE_MAX=134217728
+detect_qdisc() {
+    local cc="$1"
+
+    if [[ "$cc" == "bbr" ]]; then
+        echo "fq"
     else
-        BASE_MAX=268435456
+        echo "fq_codel"
     fi
-    log "模式: ${BBR_MODE} | 記憶體: ${MEM_MB}MB | 基礎緩衝: $((BASE_MAX/1048576))MiB"
 }
 
-install_tools() {
-    apt update -qq
-    apt install -y --no-install-recommends iproute2 sysstat bpftune 2>/dev/null || true
-    systemctl enable --now bpftune 2>/dev/null || true
+detect_mem_buf() {
+    local mem_mb
+    mem_mb="$(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo)"
+
+    if (( mem_mb <= 1024 )); then
+        echo "$MIN_BUF"
+    elif (( mem_mb <= 4096 )); then
+        echo "$MID_BUF"
+    elif (( mem_mb <= 16384 )); then
+        echo "$HIGH_BUF"
+    else
+        echo "$MAX_BUF"
+    fi
 }
 
-apply_base_config() {
-    cat > /etc/sysctl.d/99-adaptive-tcp.conf << EOF
-net.core.default_qdisc = fq_codel
-net.ipv4.tcp_congestion_control = ${BBR_MODE}
-net.ipv4.tcp_rmem = 4096 131072 ${BASE_MAX}
-net.ipv4.tcp_wmem = 4096 65536 ${BASE_MAX}
-net.core.rmem_max = ${BASE_MAX}
-net.core.wmem_max = ${BASE_MAX}
-net.ipv4.tcp_fastopen = 3
+write_sysctl() {
+    local cc="$1"
+    local qdisc="$2"
+    local buf="$3"
+
+    cat > "$CONF" <<EOF
+# Managed by ${NAME}
+
+net.core.default_qdisc = ${qdisc}
+net.ipv4.tcp_congestion_control = ${cc}
+
+net.core.rmem_max = ${buf}
+net.core.wmem_max = ${buf}
+net.ipv4.tcp_rmem = 4096 87380 ${buf}
+net.ipv4.tcp_wmem = 4096 65536 ${buf}
+
 net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_no_metrics_save = 1
 net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.tcp_ecn = 2
-net.core.somaxconn = 16384
 net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_fastopen = 3
+
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.core.netdev_max_backlog = 32768
+
+net.ipv4.ip_local_port_range = 10240 65535
+
+net.ipv4.tcp_ecn = 1
+net.ipv4.tcp_no_metrics_save = 0
 EOF
-    sysctl --system >/dev/null 2>&1
-    success "基礎配置已應用"
-}
 
-init_history() {
-    if [[ ! -f "$HISTORY_CSV" ]]; then
-        echo "timestamp,avg_rtt,avg_loss,old_rmem,new_rmem,action,reason,trend_factor" > "$HISTORY_CSV"
-        success "歷史學習檔案已建立：${HISTORY_CSV}"
+    if [[ "$MODE" == "aggressive" ]]; then
+        cat >> "$CONF" <<EOF
+
+# Mildly aggressive, but still bounded.
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_timestamps = 1
+net.ipv4.tcp_sack = 1
+net.ipv4.tcp_reordering = 15
+net.ipv4.tcp_max_tw_buckets = 2000000
+net.ipv4.tcp_fin_timeout = 15
+EOF
     fi
+
+    sysctl --system >/dev/null 2>&1 || log "warning: some sysctl values may not be supported by this kernel"
 }
 
-# ====================== 最終監控腳本（含趨勢 + 安全 + Hysteresis） ======================
-create_monitor_script() {
-    cat > "${MONITOR_SCRIPT}" << 'MONITOR_EOF'
+tune_limits() {
+    mkdir -p /etc/systemd/system.conf.d /etc/systemd/user.conf.d /etc/security/limits.d
+
+    cat > "/etc/systemd/system.conf.d/99-${NAME}-limits.conf" <<EOF
+[Manager]
+DefaultLimitNOFILE=1048576
+DefaultLimitNPROC=1048576
+EOF
+
+    cat > "/etc/systemd/user.conf.d/99-${NAME}-limits.conf" <<EOF
+[Manager]
+DefaultLimitNOFILE=1048576
+DefaultLimitNPROC=1048576
+EOF
+
+    cat > "/etc/security/limits.d/99-${NAME}.conf" <<EOF
+* soft nofile 1048576
+* hard nofile 1048576
+root soft nofile 1048576
+root hard nofile 1048576
+EOF
+
+    systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+tune_nic() {
+    local iface="$1"
+
+    [[ -n "$iface" ]] || return 0
+    command -v ethtool >/dev/null 2>&1 || return 0
+
+    ethtool -K "$iface" tso on gso on gro on 2>/dev/null || true
+    ethtool -G "$iface" rx 4096 tx 4096 2>/dev/null || true
+}
+
+install_monitor() {
+    cat > "$MONITOR" <<'MONITOR_EOF'
 #!/usr/bin/env bash
-LOG="/var/log/tcp-adaptive-monitor.log"
-HISTORY="/var/log/tcp-adaptive-history.csv"
-TARGETS=("8.8.8.8" "1.1.1.1" "223.5.5.5")
+set -euo pipefail
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] === 優化循環開始 ===" >> "$LOG"
+NAME="vps-tcp-xray"
+STATE_DIR="/var/lib/${NAME}"
+STATE="${STATE_DIR}/state"
+LOG="/var/log/${NAME}.log"
 
-# 多目標Ping + ss真實指標
-total_rtt=0; total_loss=0; valid=0
-for t in "${TARGETS[@]}"; do
-    RTT=$(ping -c 3 -W 2 "$t" 2>/dev/null | tail -1 | awk -F/ '{print int($5)}' || echo 0)
-    LOSS=$(ping -c 5 -W 2 "$t" 2>/dev/null | grep -oP '\d+(?=% packet loss)' || echo 100)
-    if [[ $RTT -gt 0 ]]; then
-        total_rtt=$((total_rtt + RTT))
-        total_loss=$((total_loss + LOSS))
-        valid=$((valid + 1))
+TARGET="${TARGET:-1.1.1.1}"
+
+MiB=$((1024 * 1024))
+MIN_BUF=$((32 * MiB))
+MAX_BUF=$((512 * MiB))
+
+log() {
+    echo "[$(date '+%F %T')] $*" >> "$LOG"
+}
+
+clamp_buf() {
+    local v="$1"
+
+    (( v < MIN_BUF )) && v="$MIN_BUF"
+    (( v > MAX_BUF )) && v="$MAX_BUF"
+
+    echo "$v"
+}
+
+safe_int() {
+    local v="${1:-0}"
+
+    if [[ "$v" =~ ^[0-9]+$ ]]; then
+        echo "$v"
+    else
+        echo 0
     fi
-done
+}
 
-AVG_RTT=$((valid > 0 ? total_rtt / valid : 80))
-AVG_LOSS=$((valid > 0 ? total_loss / valid : 2))
+get_rtt_loss() {
+    local out rtt loss
 
-OLD_MAX=$(sysctl -n net.core.rmem_max)
-NEW_MAX=$OLD_MAX
+    out="$(ping -c 10 -W 2 "$TARGET" 2>/dev/null || true)"
 
-# 趨勢學習（最近5次）
-TREND_FACTOR=0
-if [[ -f "$HISTORY" && $(wc -l < "$HISTORY") -gt 5 ]]; then
-    RECENT=$(tail -n 5 "$HISTORY" | awk -F, '{if($6=="INCREASE") print 1; else if($6=="DECREASE") print -1; else print 0}')
-    SCORE=0; WEIGHT=1
-    for t in $RECENT; do
-        SCORE=$((SCORE + t * WEIGHT))
-        WEIGHT=$((WEIGHT + 1))
-    done
-    TREND_FACTOR=$(awk "BEGIN {print $SCORE / 25}")
-    [[ $(awk "BEGIN {print ($TREND_FACTOR > 0.15)}") -eq 1 ]] && TREND_FACTOR=0.15
-    [[ $(awk "BEGIN {print ($TREND_FACTOR < -0.15)}") -eq 1 ]] && TREND_FACTOR=-0.15
+    loss="$(echo "$out" | awk -F',' '/packet loss/ {
+        gsub(/% packet loss/, "", $3)
+        gsub(/ /, "", $3)
+        print int($3)
+    }')"
+
+    rtt="$(echo "$out" | awk -F'/' '/rtt|round-trip/ {
+        print int($5)
+    }')"
+
+    rtt="$(safe_int "$rtt")"
+    loss="$(safe_int "$loss")"
+
+    if [[ "$rtt" -eq 0 && "$loss" -eq 0 && -z "$out" ]]; then
+        rtt=999
+        loss=100
+    fi
+
+    echo "$rtt $loss"
+}
+
+get_nstat_value() {
+    local key="$1"
+    local value
+
+    value="$(nstat -az "$key" 2>/dev/null | awk -v k="$key" '$1 == k {print int($2)}')"
+    safe_int "$value"
+}
+
+get_sysctl_value() {
+    local key="$1"
+    local fallback="$2"
+    local value
+
+    value="$(sysctl -n "$key" 2>/dev/null || true)"
+    safe_int "${value:-$fallback}"
+}
+
+apply_buf_only() {
+    local buf="$1"
+
+    sysctl -w \
+        net.core.rmem_max="$buf" \
+        net.core.wmem_max="$buf" \
+        net.ipv4.tcp_rmem="4096 87380 $buf" \
+        net.ipv4.tcp_wmem="4096 65536 $buf" \
+        >/dev/null 2>&1 || log "warning: buffer sysctl apply failed"
+}
+
+mkdir -p "$STATE_DIR"
+
+if [[ -f "$STATE" ]]; then
+    # shellcheck disable=SC1090
+    . "$STATE"
 fi
 
-# Hysteresis（遲滯） + 調整決策
-if [[ $AVG_RTT -gt 150 || $AVG_LOSS -gt 5 ]]; then
-    NEW_MAX=$(awk "BEGIN {print int($OLD_MAX * (1.10 + $TREND_FACTOR))}")
-    ACTION="INCREASE"
-    REASON="高延遲/高丟包"
-elif [[ $AVG_RTT -lt 45 && $AVG_LOSS -lt 1 ]]; then
-    NEW_MAX=$(awk "BEGIN {print int($OLD_MAX * (0.93 + $TREND_FACTOR))}")
-    ACTION="DECREASE"
-    REASON="低延遲"
+CURRENT_BUF="${CURRENT_BUF:-$(get_sysctl_value net.core.rmem_max $((128 * 1024 * 1024)))}"
+BAD_STREAK="${BAD_STREAK:-0}"
+GOOD_STREAK="${GOOD_STREAK:-0}"
+HIGH_BDP_STREAK="${HIGH_BDP_STREAK:-0}"
+LAST_RETRANS="${LAST_RETRANS:-0}"
+LAST_LOSS_PROBES="${LAST_LOSS_PROBES:-0}"
+
+CURRENT_BUF="$(safe_int "$CURRENT_BUF")"
+BAD_STREAK="$(safe_int "$BAD_STREAK")"
+GOOD_STREAK="$(safe_int "$GOOD_STREAK")"
+HIGH_BDP_STREAK="$(safe_int "$HIGH_BDP_STREAK")"
+LAST_RETRANS="$(safe_int "$LAST_RETRANS")"
+LAST_LOSS_PROBES="$(safe_int "$LAST_LOSS_PROBES")"
+
+read -r RTT LOSS < <(get_rtt_loss)
+
+NOW_RETRANS="$(get_nstat_value TcpRetransSegs)"
+NOW_LOSS_PROBES="$(get_nstat_value TcpExtTCPLossProbes)"
+
+DELTA_RETRANS=$(( NOW_RETRANS - LAST_RETRANS ))
+DELTA_LOSS_PROBES=$(( NOW_LOSS_PROBES - LAST_LOSS_PROBES ))
+
+(( DELTA_RETRANS < 0 )) && DELTA_RETRANS=0
+(( DELTA_LOSS_PROBES < 0 )) && DELTA_LOSS_PROBES=0
+
+ACTION="hold"
+NEW_BUF="$CURRENT_BUF"
+
+if (( LOSS >= 3 || DELTA_RETRANS >= 300 || DELTA_LOSS_PROBES >= 50 )); then
+    BAD_STREAK=$((BAD_STREAK + 1))
+    GOOD_STREAK=0
+    HIGH_BDP_STREAK=0
+
+    if (( BAD_STREAK >= 2 )); then
+        NEW_BUF=$(( CURRENT_BUF * 90 / 100 ))
+        NEW_BUF="$(clamp_buf "$NEW_BUF")"
+        ACTION="reduce_buffer_congestion_suspected"
+        BAD_STREAK=0
+    fi
+
+elif (( RTT >= 120 && LOSS <= 1 && DELTA_RETRANS < 80 )); then
+    HIGH_BDP_STREAK=$((HIGH_BDP_STREAK + 1))
+    BAD_STREAK=0
+    GOOD_STREAK=0
+
+    if (( HIGH_BDP_STREAK >= 2 )); then
+        NEW_BUF=$(( CURRENT_BUF * 112 / 100 ))
+        NEW_BUF="$(clamp_buf "$NEW_BUF")"
+        ACTION="increase_buffer_high_bdp_suspected"
+        HIGH_BDP_STREAK=0
+    fi
+
+elif (( RTT <= 50 && LOSS == 0 && DELTA_RETRANS < 30 )); then
+    GOOD_STREAK=$((GOOD_STREAK + 1))
+    BAD_STREAK=0
+    HIGH_BDP_STREAK=0
+
+    if (( GOOD_STREAK >= 6 )); then
+        NEW_BUF=$(( CURRENT_BUF * 96 / 100 ))
+        NEW_BUF="$(clamp_buf "$NEW_BUF")"
+        ACTION="reduce_buffer_low_bdp"
+        GOOD_STREAK=0
+    fi
+
 else
-    ACTION="HOLD"
-    REASON="網絡正常"
+    BAD_STREAK=0
+    GOOD_STREAK=0
+    HIGH_BDP_STREAK=0
 fi
 
-# 硬安全限幅
-[[ $NEW_MAX -gt 536870912 ]] && NEW_MAX=536870912   # 512MiB
-[[ $NEW_MAX -lt 67108864 ]] && NEW_MAX=67108864     # 64MiB
-
-# 執行調整（只有變化時才執行）
-if [[ $NEW_MAX -ne $OLD_MAX ]]; then
-    sysctl -w net.core.rmem_max=$NEW_MAX net.core.wmem_max=$NEW_MAX >/dev/null 2>&1
-    echo "調整完成：${OLD_MAX} → ${NEW_MAX} (${ACTION}) Trend:${TREND_FACTOR}" >> "$LOG"
+if [[ "$NEW_BUF" != "$CURRENT_BUF" ]]; then
+    apply_buf_only "$NEW_BUF"
+    CURRENT_BUF="$NEW_BUF"
 fi
 
-# 記錄歷史
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-echo "${TIMESTAMP},${AVG_RTT},${AVG_LOSS},${OLD_MAX},${NEW_MAX},${ACTION},${REASON},${TREND_FACTOR}" >> "$HISTORY"
+cat > "$STATE" <<STATE_EOF
+CURRENT_BUF=${CURRENT_BUF}
+BAD_STREAK=${BAD_STREAK}
+GOOD_STREAK=${GOOD_STREAK}
+HIGH_BDP_STREAK=${HIGH_BDP_STREAK}
+LAST_RETRANS=${NOW_RETRANS}
+LAST_LOSS_PROBES=${NOW_LOSS_PROBES}
+STATE_EOF
 
-echo "RTT:${AVG_RTT}ms Loss:${AVG_LOSS}% ${ACTION} ${OLD_MAX}→${NEW_MAX} (Trend:${TREND_FACTOR})" >> "$LOG"
+CC="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo unknown)"
+QDISC="$(sysctl -n net.core.default_qdisc 2>/dev/null || echo unknown)"
+
+log "target=${TARGET} rtt=${RTT}ms loss=${LOSS}% retrans_delta=${DELTA_RETRANS} loss_probe_delta=${DELTA_LOSS_PROBES} buf=${CURRENT_BUF} cc=${CC} qdisc=${QDISC} action=${ACTION}"
 MONITOR_EOF
 
-    chmod +x "${MONITOR_SCRIPT}"
-    success "最終穩定優化腳本已建立（含趨勢 + Hysteresis + 安全保護）"
+    chmod +x "$MONITOR"
 }
 
-# ====================== systemd 服務 ======================
-create_systemd_service() {
-    cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
+install_systemd() {
+    cat > "$SERVICE" <<EOF
 [Unit]
-Description=Advanced TCP Optimizer with Trend Learning
+Description=VPS TCP Xray Adaptive Monitor
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=${MONITOR_SCRIPT}
+Environment=TARGET=${TARGET}
+ExecStart=${MONITOR}
 EOF
 
-    cat > "/etc/systemd/system/${TIMER_NAME}" << EOF
+    cat > "$TIMER" <<EOF
 [Unit]
-Description=Run Advanced TCP Optimizer every 10 minutes
+Description=Run VPS TCP Xray Adaptive Monitor
 
 [Timer]
-OnBootSec=60
-OnUnitActiveSec=10min
-RandomizedDelaySec=60
+OnBootSec=1min
+OnUnitActiveSec=${INTERVAL}
+RandomizedDelaySec=30
 Persistent=true
 
 [Install]
@@ -178,32 +384,144 @@ WantedBy=timers.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable --now "${TIMER_NAME}" >/dev/null 2>&1
-    success "每10分鐘最終穩定優化服務已啟用"
+    systemctl enable --now "${NAME}.timer"
 }
 
-# ====================== 主流程 ======================
-main() {
-    echo -e "\n${CYAN}=== Ubuntu/Debian TCP 最終最優穩定版 ===${NC}\n"
+backup() {
+    mkdir -p "$STATE_DIR/backup"
 
-    detect_system
-    detect_kernel_and_memory
-    install_tools
-    init_history
-
-    mkdir -p "/root/tcp-backup-$(date +%Y%m%d_%H%M)"
-    success "配置已備份"
-
-    apply_base_config
-    create_monitor_script
-    create_systemd_service
-
-    echo -e "\n${GREEN}最終版部署完成！${NC}"
-    echo "• 每10分鐘自動優化 + 趨勢學習"
-    echo "• 加入Hysteresis與硬安全保護"
-    echo "• 歷史記錄：${HISTORY_CSV}"
-    echo "• 日誌：/var/log/tcp-adaptive-monitor.log"
-    echo "• 查看最近調整：tail -n 15 ${HISTORY_CSV}"
+    cp -a /etc/sysctl.conf "$STATE_DIR/backup/sysctl.conf.$(date +%F-%H%M%S)" 2>/dev/null || true
+    cp -a /etc/sysctl.d "$STATE_DIR/backup/sysctl.d.$(date +%F-%H%M%S)" 2>/dev/null || true
+    sysctl -a > "$STATE_DIR/backup/sysctl.before.$(date +%F-%H%M%S)" 2>/dev/null || true
 }
 
-main "$@"
+check_deps() {
+    command -v ip >/dev/null 2>&1 || die "missing command: ip"
+    command -v ping >/dev/null 2>&1 || die "missing command: ping"
+    command -v sysctl >/dev/null 2>&1 || die "missing command: sysctl"
+    command -v nstat >/dev/null 2>&1 || die "missing command: nstat"
+    command -v systemctl >/dev/null 2>&1 || die "missing command: systemctl"
+}
+
+install_all() {
+    need_root
+    check_deps
+
+    mkdir -p "$STATE_DIR"
+    backup
+
+    local cc qdisc buf iface
+
+    cc="$(detect_cc)"
+    qdisc="$(detect_qdisc "$cc")"
+    buf="$(detect_mem_buf)"
+    iface="$(detect_iface || true)"
+
+    write_sysctl "$cc" "$qdisc" "$buf"
+    tune_limits
+    tune_nic "$iface"
+
+    cat > "$STATE" <<EOF
+CURRENT_BUF=${buf}
+BAD_STREAK=0
+GOOD_STREAK=0
+HIGH_BDP_STREAK=0
+LAST_RETRANS=0
+LAST_LOSS_PROBES=0
+EOF
+
+    install_monitor
+    install_systemd
+
+    log "installed mode=${MODE} target=${TARGET} interval=${INTERVAL} iface=${iface:-unknown} cc=${cc} qdisc=${qdisc} buf=${buf}"
+
+    echo "Installed ${NAME}."
+    echo "Mode: ${MODE}"
+    echo "Target: ${TARGET}"
+    echo "Interface: ${iface:-unknown}"
+    echo "Log: ${LOG}"
+}
+
+status_all() {
+    echo "=== sysctl ==="
+    sysctl net.ipv4.tcp_congestion_control 2>/dev/null || true
+    sysctl net.core.default_qdisc 2>/dev/null || true
+    sysctl net.core.rmem_max 2>/dev/null || true
+    sysctl net.core.wmem_max 2>/dev/null || true
+    sysctl net.ipv4.tcp_rmem 2>/dev/null || true
+    sysctl net.ipv4.tcp_wmem 2>/dev/null || true
+    sysctl net.ipv4.tcp_fastopen 2>/dev/null || true
+    sysctl net.ipv4.tcp_ecn 2>/dev/null || true
+    sysctl net.core.somaxconn 2>/dev/null || true
+    sysctl net.ipv4.tcp_max_syn_backlog 2>/dev/null || true
+    sysctl net.ipv4.ip_local_port_range 2>/dev/null || true
+
+    echo
+    echo "=== state ==="
+    cat "$STATE" 2>/dev/null || true
+
+    echo
+    echo "=== timer ==="
+    systemctl status "${NAME}.timer" --no-pager 2>/dev/null || true
+
+    echo
+    echo "=== recent log ==="
+    tail -n 30 "$LOG" 2>/dev/null || true
+}
+
+rollback_all() {
+    need_root
+
+    systemctl disable --now "${NAME}.timer" 2>/dev/null || true
+
+    rm -f "$CONF" "$MONITOR" "$SERVICE" "$TIMER"
+    rm -f "/etc/systemd/system.conf.d/99-${NAME}-limits.conf"
+    rm -f "/etc/systemd/user.conf.d/99-${NAME}-limits.conf"
+    rm -f "/etc/security/limits.d/99-${NAME}.conf"
+
+    systemctl daemon-reload
+    sysctl --system >/dev/null 2>&1 || true
+
+    echo "Removed ${NAME} configuration."
+    echo "Backups are stored in: ${STATE_DIR}/backup"
+}
+
+run_once() {
+    need_root
+
+    [[ -x "$MONITOR" ]] || die "monitor is not installed. Run: sudo bash $0 install"
+
+    "$MONITOR"
+    tail -n 5 "$LOG" 2>/dev/null || true
+}
+
+case "${1:-}" in
+    install)
+        install_all
+        ;;
+    status)
+        status_all
+        ;;
+    rollback)
+        rollback_all
+        ;;
+    run-once)
+        run_once
+        ;;
+    *)
+        cat <<EOF
+Usage:
+  sudo bash $0 install
+  sudo bash $0 status
+  sudo bash $0 run-once
+  sudo bash $0 rollback
+
+Optional:
+  MODE=safe sudo bash $0 install
+  MODE=aggressive sudo bash $0 install
+  TARGET=8.8.8.8 sudo bash $0 install
+  INTERVAL=3min TARGET=1.1.1.1 sudo bash $0 install
+EOF
+        exit 1
+        ;;
+esac
