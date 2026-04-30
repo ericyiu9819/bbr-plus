@@ -1,270 +1,189 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONF_FILE="/etc/sysctl.d/99-tcp-physics-opt.conf"
-BACKUP_DIR="/etc/tcp-physics-backup"
-MODE="${1:-install}"
+TARGET="${1:-1.1.1.1}"
+PING_COUNT="${2:-30}"
 
 need_root() {
-    if [ "$(id -u)" -ne 0 ]; then
-        echo "错误：请使用 root 权限运行。"
-        exit 1
-    fi
+  [ "$EUID" -eq 0 ] || { echo "请用 root 运行"; exit 1; }
 }
 
-check_command() {
-    if ! command -v sysctl >/dev/null 2>&1; then
-        echo "错误：未找到 sysctl 命令。"
-        exit 1
-    fi
+is_positive_int() {
+  [[ "${1:-}" =~ ^[1-9][0-9]*$ ]]
 }
 
-detect_bbr() {
-    echo "当前内核：$(uname -r)"
-
-    # 尝试加载模块；如果 BBR 已内建进内核，modprobe 失败也不一定是问题。
-    modprobe tcp_bbr 2>/dev/null || true
-
-    if ! sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
-        echo "错误：当前内核未检测到 BBR 支持。"
-        echo "建议升级到 Linux 4.9+，更推荐 Linux 5.x 或 6.x 内核。"
-        exit 1
-    fi
+detect_iface() {
+  ip route get "$TARGET" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}'
 }
 
-backup_current() {
-    mkdir -p "$BACKUP_DIR"
+detect_metrics() {
+  local result loss rtt
+  result=$(ping -c "$PING_COUNT" -q "$TARGET" 2>/dev/null || true)
 
-    local backup_file
-    backup_file="$BACKUP_DIR/sysctl-backup-$(date +%Y%m%d-%H%M%S).conf"
+  loss=$(printf '%s\n' "$result" | awk -F',' '/packet loss/ {for(i=1;i<=NF;i++) if($i ~ /packet loss/) {gsub(/^[ \t]+|[ \t]+$/, "", $i); sub(/% packet loss.*/, "", $i); print $i; exit}}')
+  rtt=$(printf '%s\n' "$result" | awk -F'/' '/rtt|round-trip/ {print $5; exit}')
 
-    {
-        echo "# Backup created at $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "# Kernel: $(uname -r)"
-        echo
-
-        for key in \
-            net.core.default_qdisc \
-            net.ipv4.tcp_congestion_control \
-            net.ipv4.tcp_window_scaling \
-            net.ipv4.tcp_timestamps \
-            net.ipv4.tcp_sack \
-            net.core.rmem_max \
-            net.core.wmem_max \
-            net.ipv4.tcp_rmem \
-            net.ipv4.tcp_wmem \
-            net.ipv4.tcp_fastopen \
-            net.ipv4.tcp_mtu_probing \
-            net.ipv4.tcp_no_metrics_save
-        do
-            sysctl "$key" 2>/dev/null || true
-        done
-    } > "$backup_file"
-
-    echo "已备份当前 TCP 参数到：$backup_file"
+  echo "${loss:-100} ${rtt:-999}"
 }
 
-write_config() {
-    local tmp_file
-    tmp_file="$(mktemp)"
+has_sysctl() {
+  sysctl -n "$1" >/dev/null 2>&1
+}
 
-    cat > "$tmp_file" <<'EOF'
-# TCP Physics Optimization
-#
-# Design goals:
-# 1. Use BBR to estimate bottleneck bandwidth and minimum RTT.
-# 2. Use fq to support stable packet pacing.
-# 3. Allow TCP auto-tuning to use larger buffers on high-BDP paths.
-# 4. Avoid risky or fake acceleration settings.
+set_sysctl_if_exists() {
+  local key="$1"
+  local value="$2"
+  if has_sysctl "$key"; then
+    sysctl -w "$key=$value" >/dev/null
+    echo "已设置: $key=$value"
+  else
+    echo "跳过: $key 不存在"
+  fi
+}
 
-# Queue discipline. fq is recommended for BBR pacing.
-net.core.default_qdisc = fq
+has_cc() {
+  sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw "$1"
+}
 
-# Congestion control.
-net.ipv4.tcp_congestion_control = bbr
+select_cc() {
+  modprobe tcp_bbr 2>/dev/null || true
+  if has_cc bbr3; then
+    echo "bbr3"
+  elif has_cc bbr; then
+    echo "bbr"
+  else
+    echo ""
+  fi
+}
 
-# TCP window scaling for high bandwidth-delay product paths.
-net.ipv4.tcp_window_scaling = 1
+apply_base() {
+  local cc
+  cc=$(select_cc)
 
-# TCP timestamps help RTT measurement and modern TCP behavior.
-net.ipv4.tcp_timestamps = 1
+  set_sysctl_if_exists net.core.default_qdisc fq
 
-# Selective ACK improves loss recovery.
-net.ipv4.tcp_sack = 1
+  if [ -n "$cc" ]; then
+    set_sysctl_if_exists net.ipv4.tcp_congestion_control "$cc"
+  else
+    echo "警告: 当前内核无 bbr/bbr3，保持默认拥塞控制"
+  fi
 
-# Socket buffer upper limits.
-# These are maximums; TCP auto-tuning decides actual usage.
-net.core.rmem_max = 134217728
-net.core.wmem_max = 134217728
+  set_sysctl_if_exists net.ipv4.tcp_fastopen 3
+  set_sysctl_if_exists net.ipv4.tcp_mtu_probing 1
+  set_sysctl_if_exists net.ipv4.tcp_slow_start_after_idle 0
+  set_sysctl_if_exists net.ipv4.tcp_no_metrics_save 1
+  set_sysctl_if_exists net.core.somaxconn 65535
+  set_sysctl_if_exists net.ipv4.tcp_max_syn_backlog 65535
+  set_sysctl_if_exists net.ipv4.ip_local_port_range "1024 65535"
+  set_sysctl_if_exists net.ipv4.tcp_rmem "4096 87380 67108864"
+  set_sysctl_if_exists net.ipv4.tcp_wmem "4096 65536 67108864"
+  set_sysctl_if_exists net.core.rmem_max 67108864
+  set_sysctl_if_exists net.core.wmem_max 67108864
+}
 
-# TCP auto-tuning buffers: min default max.
-net.ipv4.tcp_rmem = 4096 87380 67108864
-net.ipv4.tcp_wmem = 4096 65536 67108864
+apply_preemptive_safe() {
+  local iface
+  iface=$(detect_iface || true)
 
-# TCP Fast Open:
-# 0 = disabled
-# 1 = client
-# 2 = server
-# 3 = client and server
-net.ipv4.tcp_fastopen = 3
+  echo "启用安全抢占模块"
 
-# Path MTU probing:
-# 0 = disabled
-# 1 = weak probing
-# 2 = always probing
-net.ipv4.tcp_mtu_probing = 1
+  set_sysctl_if_exists net.ipv4.tcp_notsent_lowat 16384
+  set_sysctl_if_exists net.ipv4.tcp_autocorking 0
+  set_sysctl_if_exists net.ipv4.tcp_low_latency 1
 
-# Do not permanently cache bad TCP metrics from unstable routes.
-net.ipv4.tcp_no_metrics_save = 1
+  if command -v tc >/dev/null 2>&1 && [ -n "${iface:-}" ]; then
+    tc qdisc replace dev "$iface" root fq 2>/dev/null || echo "警告: tc 设置 fq 失败"
+    echo "出口网卡: $iface"
+  else
+    echo "跳过 tc qdisc: 未安装 tc 或未检测到出口网卡"
+  fi
+}
+
+apply_dynamic() {
+  local loss rtt loss_int rtt_int
+  read -r loss rtt < <(detect_metrics)
+
+  loss_int=${loss%.*}
+  rtt_int=${rtt%.*}
+
+  echo "检测目标: $TARGET"
+  echo "丢包率: ${loss}%"
+  echo "平均RTT: ${rtt} ms"
+  echo
+
+  apply_base
+  apply_preemptive_safe
+
+  echo
+  if [ "$loss_int" -lt 1 ]; then
+    echo "模式: 低丢包链路 -> TCP + BBR/BBRv3"
+    set_sysctl_if_exists net.ipv4.tcp_retries2 8
+  elif [ "$loss_int" -lt 3 ]; then
+    echo "模式: 轻微丢包 -> QUIC/Hysteria2 更优"
+    set_sysctl_if_exists net.ipv4.tcp_retries2 7
+  elif [ "$loss_int" -lt 10 ]; then
+    echo "模式: 中高丢包 -> 需要 UDP/FEC 抗丢包"
+    set_sysctl_if_exists net.ipv4.tcp_retries2 6
+  else
+    echo "模式: 严重丢包 -> 参数优化价值极低"
+    set_sysctl_if_exists net.ipv4.tcp_retries2 5
+  fi
+
+  if [ "$rtt_int" -gt 150 ]; then
+    echo "高 RTT: 提高窗口容忍度"
+    set_sysctl_if_exists net.ipv4.tcp_adv_win_scale 1
+  fi
+}
+
+persist() {
+  local conf="/etc/sysctl.d/99-dynamic-tcp-accel.conf"
+  local cc
+  cc=$(select_cc)
+
+  cat >"$conf" <<EOF
+net.core.default_qdisc=fq
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_no_metrics_save=1
+net.ipv4.tcp_notsent_lowat=16384
+net.ipv4.tcp_autocorking=0
+net.core.somaxconn=65535
+net.ipv4.tcp_max_syn_backlog=65535
+net.ipv4.ip_local_port_range=1024 65535
+net.ipv4.tcp_rmem=4096 87380 67108864
+net.ipv4.tcp_wmem=4096 65536 67108864
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
 EOF
 
-    install -m 0644 "$tmp_file" "$CONF_FILE"
-    rm -f "$tmp_file"
-}
+  if [ -n "$cc" ]; then
+    echo "net.ipv4.tcp_congestion_control=$cc" >>"$conf"
+  fi
 
-apply_config() {
-    echo "正在应用配置：$CONF_FILE"
-
-    if ! sysctl -p "$CONF_FILE"; then
-        echo "错误：配置应用失败。"
-        echo "可能原因：当前内核不支持某些参数，例如 fq 或 BBR。"
-        exit 1
-    fi
-
-    validate_config
-}
-
-validate_config() {
-    local cc
-    local qdisc
-
-    cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
-    qdisc="$(sysctl -n net.core.default_qdisc 2>/dev/null || true)"
-
-    if [ "$cc" != "bbr" ]; then
-        echo "错误：BBR 未成功启用。当前拥塞控制算法为：$cc"
-        exit 1
-    fi
-
-    if [ "$qdisc" != "fq" ]; then
-        echo "错误：fq 队列未成功启用。当前默认队列为：$qdisc"
-        exit 1
-    fi
-
-    echo "验证通过：BBR 与 fq 已成功启用。"
-}
-
-show_status() {
-    echo
-    echo "====== 当前 TCP 状态 ======"
-    echo
-
-    sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null || true
-    sysctl net.ipv4.tcp_congestion_control 2>/dev/null || true
-    sysctl net.core.default_qdisc 2>/dev/null || true
-
-    echo
-    sysctl net.ipv4.tcp_window_scaling 2>/dev/null || true
-    sysctl net.ipv4.tcp_timestamps 2>/dev/null || true
-    sysctl net.ipv4.tcp_sack 2>/dev/null || true
-    sysctl net.ipv4.tcp_fastopen 2>/dev/null || true
-    sysctl net.ipv4.tcp_mtu_probing 2>/dev/null || true
-    sysctl net.ipv4.tcp_no_metrics_save 2>/dev/null || true
-
-    echo
-    sysctl net.core.rmem_max 2>/dev/null || true
-    sysctl net.core.wmem_max 2>/dev/null || true
-    sysctl net.ipv4.tcp_rmem 2>/dev/null || true
-    sysctl net.ipv4.tcp_wmem 2>/dev/null || true
-
-    echo
-    echo "====== BBR 模块状态 ======"
-    if lsmod 2>/dev/null | grep -q '^tcp_bbr'; then
-        lsmod | grep '^tcp_bbr'
-    else
-        echo "tcp_bbr 未显示在 lsmod 中；如果 BBR 已生效，说明它可能已内建进内核。"
-    fi
-
-    echo
-    echo "====== 验证建议 ======"
-    echo "1. 对比安装前后的单连接速度。"
-    echo "2. 对比空载 RTT 与满载 RTT。"
-    echo "3. 如果满载 RTT 暴涨，说明瓶颈更可能是队列膨胀或线路拥塞。"
-    echo "4. 如果晚高峰仍然明显变慢，优先检查线路、路由、丢包和 VPS 超售。"
-}
-
-latest_backup_file() {
-    find "$BACKUP_DIR" -maxdepth 1 -type f -name 'sysctl-backup-*.conf' 2>/dev/null | sort | tail -n 1
-}
-
-rollback_config() {
-    local backup_file
-
-    if [ -f "$CONF_FILE" ]; then
-        rm -f "$CONF_FILE"
-        echo "已删除优化配置文件：$CONF_FILE"
-    else
-        echo "未发现优化配置文件：$CONF_FILE"
-    fi
-
-    backup_file="$(latest_backup_file || true)"
-
-    if [ -n "${backup_file:-}" ] && [ -f "$backup_file" ]; then
-        echo "正在恢复最近一次备份：$backup_file"
-
-        if ! sysctl -p "$backup_file"; then
-            echo "警告：备份恢复未完全成功。可能是当前内核不支持其中某些参数。"
-        else
-            echo "备份参数已恢复。"
-        fi
-    else
-        echo "未找到可用备份。已仅删除本脚本生成的配置文件。"
-    fi
-
-    show_status
-}
-
-install_config() {
-    detect_bbr
-    backup_current
-    write_config
-    apply_config
-    show_status
-}
-
-usage() {
-    cat <<EOF
-用法：
-  bash $0 install    安装并应用 TCP 优化
-  bash $0 status     查看当前 TCP 状态
-  bash $0 rollback   删除优化配置并尝试恢复最近一次备份
-
-示例：
-  bash $0 install
-  bash $0 status
-  bash $0 rollback
-EOF
+  sysctl --system >/dev/null 2>&1 || echo "警告: sysctl --system 部分参数加载失败"
 }
 
 main() {
-    need_root
-    check_command
+  need_root
 
-    case "$MODE" in
-        install)
-            install_config
-            ;;
-        status)
-            show_status
-            ;;
-        rollback)
-            rollback_config
-            ;;
-        *)
-            usage
-            exit 1
-            ;;
-    esac
+  if ! is_positive_int "$PING_COUNT"; then
+    echo "PING_COUNT 必须是正整数"
+    exit 1
+  fi
+
+  if ! command -v ping >/dev/null 2>&1; then
+    echo "缺少 ping 命令"
+    exit 1
+  fi
+
+  apply_dynamic
+  persist
+
+  echo
+  echo "完成"
+  echo "当前拥塞控制: $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo unknown)"
+  echo "当前队列算法: $(sysctl -n net.core.default_qdisc 2>/dev/null || echo unknown)"
 }
 
-main
+main "$@"
