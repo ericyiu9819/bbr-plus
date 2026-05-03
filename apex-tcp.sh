@@ -5,13 +5,13 @@ echo "=============================================="
 echo "   CachyOS Server 内核 + 极致激进网络优化"
 echo "=============================================="
 
-# 1. 检查是否已安装
+# 检查是否已安装
 if dpkg -l | grep -q linux-cachyos-server; then
     echo "[✓] 检测到已安装 CachyOS Server 内核，跳过安装步骤。"
 else
     echo "[1/3] 添加 CachyOS 仓库..."
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://mirror.cachyos.org/repo/x86_64/cachyos.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/cachyos.gpg
+    curl -fsSL https://mirror.cachyos.org/cachyos.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/cachyos.gpg
     echo "deb [signed-by=/etc/apt/keyrings/cachyos.gpg] https://mirror.cachyos.org/repo/x86_64/ cachyos main" | sudo tee /etc/apt/sources.list.d/cachyos.list > /dev/null
 
     echo "[2/3] 安装 CachyOS Server 内核..."
@@ -54,7 +54,7 @@ echo "应用 sysctl 配置..."
 sudo sysctl -p /etc/sysctl.d/99-cachyos-aggressive.conf
 
 echo ""
-echo "正在删除多余的旧内核..."
+echo "正在删除多余旧内核..."
 sudo apt autoremove --purge -y
 
 echo ""
