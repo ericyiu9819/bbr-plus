@@ -5,19 +5,18 @@ echo "=============================================="
 echo "   CachyOS Server 内核 + 极致激进网络优化"
 echo "=============================================="
 
-# 检查是否已安装
-if dpkg -l | grep -q linux-cachyos-server; then
-    echo "[✓] 检测到已安装 CachyOS Server 内核，跳过安装步骤。"
-else
-    echo "[1/3] 添加 CachyOS 仓库..."
-    sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://mirror.cachyos.org/cachyos.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/cachyos.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/cachyos.gpg] https://mirror.cachyos.org/repo/x86_64/ cachyos main" | sudo tee /etc/apt/sources.list.d/cachyos.list > /dev/null
+# 清理旧文件
+sudo rm -f /etc/apt/keyrings/cachyos.gpg
+sudo rm -f /etc/apt/sources.list.d/cachyos.list
 
-    echo "[2/3] 安装 CachyOS Server 内核..."
-    sudo apt update
-    sudo apt install -y linux-cachyos-server linux-headers-cachyos-server
-fi
+echo "[1/3] 添加 CachyOS 仓库..."
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://raw.githubusercontent.com/CachyOS/cachyos-repo/main/cachyos.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/cachyos.gpg
+echo "deb [signed-by=/etc/apt/keyrings/cachyos.gpg] https://mirror.cachyos.org/repo/x86_64/ cachyos main" | sudo tee /etc/apt/sources.list.d/cachyos.list > /dev/null
+
+echo "[2/3] 安装 CachyOS Server 内核..."
+sudo apt update
+sudo apt install -y linux-cachyos-server linux-headers-cachyos-server
 
 echo "[3/3] 应用极致激进网络优化参数..."
 
@@ -62,10 +61,8 @@ echo "=============================================="
 echo "           安装完成！"
 echo "=============================================="
 echo ""
-echo "请执行以下命令重启 VPS："
-echo "  sudo reboot"
+echo "请执行：sudo reboot"
 echo ""
-echo "重启后验证命令："
-echo "  uname -r"
-echo "  sysctl net.ipv4.tcp_congestion_control"
-echo "  sysctl net.core.rmem_max"
+echo "重启后验证："
+echo "uname -r"
+echo "sysctl net.ipv4.tcp_congestion_control"
