@@ -1,5 +1,5 @@
 #!/bin/bash
-# VPS TCP 激进自适应优化 v3.6 - 中国用户最终修复版（jq + 整数双收敛）
+# VPS TCP 激进自适应优化 v3.7 - 中国用户最终稳定版（前导0 + jq + RTT 全收敛）
 set -euo pipefail
 SCRIPT_PATH="/root/tcp-optimize.sh"
 LOG="/var/log/tcp-dynamic-opt.log"
@@ -29,15 +29,15 @@ CURRENT_GAIN=3.0
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 
-# ==================== 安全函数 ====================
+# ==================== 安全函数（彻底防前导0） ====================
+strip_leading_zero() {
+    echo "$1" | sed 's/^0*//'
+}
+
 safe_rtt() {
     local host=$1
     local raw=$(ping -c 3 -W 2 "$host" 2>/dev/null | tail -n 1 | awk -F/ '{print $5}' | tr -dc '0-9' | head -c 10)
-    if [[ -z "$raw" || "$raw" -eq 0 ]]; then
-        echo 9999
-    else
-        echo "$raw"
-    fi
+    [[ -z "$raw" || "$raw" -eq 0 ]] && echo 9999 || strip_leading_zero "$raw"
 }
 
 safe_bw_mbps() {
@@ -47,7 +47,7 @@ safe_bw_mbps() {
     if [[ "$bps" == "null" || -z "$bps" || "$bps" -eq 0 ]]; then
         echo 80
     else
-        echo "$((bps / 1000000))"
+        strip_leading_zero "$((bps / 1000000))"
     fi
 }
 
@@ -67,7 +67,7 @@ select_best_iperf() {
     log "✅ 选中: $CURRENT_IPERF (RTT≈${best_rtt}ms)"
 }
 
-# ==================== 安装 & 自保存 ====================
+# ==================== 依赖 & 自保存 ====================
 install_dependencies() {
     log "安装依赖..."
     if command -v apt-get >/dev/null 2>&1; then
@@ -81,7 +81,7 @@ install_dependencies() {
 
 self_save() {
     if [ "$0" != "$SCRIPT_PATH" ]; then
-        log "持久化脚本到 $SCRIPT_PATH"
+        log "持久化脚本..."
         cp "$0" "$SCRIPT_PATH" 2>/dev/null || cat "$0" > "$SCRIPT_PATH"
         chmod +x "$SCRIPT_PATH"
     fi
@@ -102,7 +102,6 @@ while true; do
     MIN_RTT=$(safe_rtt "$TEST_HOST")
     LOSS=$(mtr -r -c 8 "$TEST_HOST" 2>/dev/null | tail -1 | awk '{print int($NF)}' || echo 2)
 
-    # 带宽测量（强容错）
     BW_MBPS=$(safe_bw_mbps "$CURRENT_IPERF")
     if [ "$BW_MBPS" -eq 80 ]; then
         log "测量异常，重新选择服务器..."
@@ -110,14 +109,15 @@ while true; do
         BW_MBPS=$(safe_bw_mbps "$CURRENT_IPERF")
     fi
 
-    NEW_BDP=$(( BW_MBPS * 125 * MIN_RTT / 1000 ))
+    # 所有算术强制10进制（彻底防0839错误）
+    NEW_BDP=$(( 10#${BW_MBPS} * 125 * 10#${MIN_RTT} / 1000 ))
 
     if [ "$SMOOTHED_BDP" -eq 0 ]; then SMOOTHED_BDP=$NEW_BDP; fi
     SMOOTHED_BDP=$(echo "scale=0; $ALPHA * $NEW_BDP + (1 - $ALPHA) * $SMOOTHED_BDP" | bc || echo "$NEW_BDP")
 
     CHANGE_PCT=0
     if [ "$PREV_RTT" -gt 0 ]; then
-        CHANGE_PCT=$(echo "scale=0; (${PREV_RTT} - ${MIN_RTT}) * 100 / ${PREV_RTT}" | bc 2>/dev/null || echo 0)
+        CHANGE_PCT=$(echo "scale=0; (10#${PREV_RTT} - 10#${MIN_RTT}) * 100 / 10#${PREV_RTT}" | bc 2>/dev/null || echo 0)
     fi
 
     if (( LOSS < 2 && CHANGE_PCT < 15 && MEM_FREE_PCT > 30 && CPU_LOAD < 1.5 )); then
