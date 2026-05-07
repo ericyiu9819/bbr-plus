@@ -1,118 +1,105 @@
 #!/bin/bash
-# VPS TCP 自适应优化 v4.2 - 测量步骤彻底收敛版（零错误）
+# PID-BBR-Gain 自适应TCP优化 v5.0 - 全新控制论算法
 set -euo pipefail
-LOG="/var/log/tcp-adapt-opt.log"
+LOG="/var/log/pid-tcp-opt.log"
 TEST_HOST="8.8.8.8"
 
-IPERF_SERVERS=("speedtest.hkg12.hk.leaseweb.net" "84.17.57.129" "23.249.58.14" 
-               "speedtest.sin1.sg.leaseweb.net" "89.187.162.1" "iperf3.moji.fr")
+IPERF_SERVERS=("speedtest.hkg12.hk.leaseweb.net" "84.17.57.129" "speedtest.sin1.sg.leaseweb.net")
 
 CURRENT_IPERF=""
 INTERVAL=600
-ALPHA=65          # 整数 0.65
-GAIN=3
-GAIN_MAX=6
-STABLE_COUNT=0
-STABLE_WIN=4
+
+# PID参数（可在线自适应调优）
+KP=0.8
+KI=0.15
+KD=0.4
+INTEGRAL=0
+PREV_ERROR=0
+GAIN=3.0
 SMOOTHED_BDP=0
 PREV_RTT=200
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 
-# ==================== 极致安全的测量函数 ====================
-safe_int() {
-    local val=$(echo "$1" | tr -dc '0-9' | sed 's/^0*//' | head -c 10)
-    [[ -z "$val" ]] && echo 0 || echo "$val"
-}
+safe_int() { echo "$1" | tr -dc '0-9' | sed 's/^0*//' | head -c 10 | grep -E '^[0-9]+$' || echo 0; }
 
 measure_rtt() {
-    # 多命令fallback + 严格提取
-    local raw
-    raw=$(ping -c 4 -W 2 -i 0.3 "$1" 2>/dev/null | tail -n 1 | awk -F/ '{print $5}' | tr -dc '0-9')
-    [ -z "$raw" ] && raw=$(ping -c 3 -W 3 "$1" 2>/dev/null | grep -o 'time=[0-9.]*' | head -1 | tr -dc '0-9')
+    local raw=$(ping -c 4 -W 2 "$1" 2>/dev/null | tail -n1 | awk -F/ '{print $5}' | tr -dc '0-9')
     safe_int "${raw:-9999}"
 }
 
 measure_loss() {
-    local raw=$(mtr -r -c 6 --report-wide "$1" 2>/dev/null | tail -1 | awk '{print $NF}' | tr -dc '0-9')
-    [ -z "$raw" ] && raw=2   # 默认2%
-    safe_int "$raw"
+    local raw=$(mtr -r -c 6 "$1" 2>/dev/null | tail -1 | awk '{print $NF}' | tr -dc '0-9')
+    safe_int "${raw:-2}"
 }
 
 measure_bw() {
-    local srv=$1
-    local json=$(timeout 8 iperf3 -c "$srv" -t 6 -J 2>/dev/null || echo '{}')
+    local json=$(timeout 8 iperf3 -c "$1" -t 5 -J 2>/dev/null || echo '{}')
     local bps=$(echo "$json" | jq -r '.end.sum_sent.bits_per_second // 0' 2>/dev/null || echo 0)
-    [ "$bps" = "null" ] && bps=0
-    local mbps=$((bps / 1000000))
-    safe_int "$mbps"
+    safe_int "$((bps / 1000000))"
 }
 
 select_best_server() {
-    local best=9999 srv_best=""
-    log "=== 开始测量服务器选择 ==="
+    local best=9999 srv=""
     for s in "${IPERF_SERVERS[@]}"; do
         local r=$(measure_rtt "$s")
-        log "  测试 $s → RTT=${r}ms"
-        [ "$r" -lt "$best" ] && best=$r && srv_best=$s
+        [ "$r" -lt "$best" ] && best=$r && srv=$s
     done
-    CURRENT_IPERF=$srv_best
-    log "✅ 选中最优服务器: $CURRENT_IPERF"
+    CURRENT_IPERF=$srv
+    log "选中服务器: $CURRENT_IPERF"
 }
 
-# 主循环测量部分（已优化）
+if [[ $EUID -ne 0 ]]; then log "必须root"; exit 1; fi
+# 安装依赖（幂等）
+command -v iperf3 >/dev/null || apt-get update -qq && apt-get install -y iperf3 mtr jq bc 2>/dev/null || true
+select_best_server
+
 while true; do
-    # 1. 核心测量（极致容错）
-    CPU=$(awk '{print $1}' /proc/loadavg)
-    MEM_FREE=$(free -m | awk 'NR==2{print int(($4+$7)/$2*100)}' || echo 50)
-    
     RTT=$(measure_rtt "$TEST_HOST")
     LOSS=$(measure_loss "$TEST_HOST")
     BW=$(measure_bw "$CURRENT_IPERF")
-    [ "$BW" -eq 0 ] && BW=80   # 保守默认
+    [ "$BW" -eq 0 ] && BW=80
 
-    log "测量结果: RTT=${RTT}ms Loss=${LOSS}% BW=${BW}Mbps (Server=${CURRENT_IPERF})"
-
-    # 2. BDP + 平滑（纯整数）
     BDP=$((10#${BW} * 125 * 10#${RTT} / 1000))
-    [ "$SMOOTHED_BDP" -eq 0 ] && SMOOTHED_BDP=$BDP
-    SMOOTHED_BDP=$(echo "scale=0; ($ALPHA * $BDP + (100 - $ALPHA) * $SMOOTHED_BDP) / 100" | bc)
-    SMOOTHED_BDP=$(safe_int "$SMOOTHED_BDP")
+    [ $SMOOTHED_BDP -eq 0 ] && SMOOTHED_BDP=$BDP
+    SMOOTHED_BDP=$(( (65 * BDP + 35 * SMOOTHED_BDP) / 100 ))   # 简单低通
 
-    # 3. 稳定性判断
-    CHANGE=0
-    [ "$PREV_RTT" -gt 0 ] && CHANGE=$(echo "scale=0; (10#${PREV_RTT} - 10#${RTT}) * 100 / 10#${PREV_RTT}" | bc)
-    CHANGE=$(safe_int "$CHANGE")
+    # PID核心计算
+    ERROR=$(( (RTT * 100 / (PREV_RTT + 1)) - 100 ))   # 百分比偏差（>0表示恶化）
+    [ $ERROR -gt 50 ] && ERROR=50
+    [ $ERROR -lt -30 ] && ERROR=-30
 
-    if (( LOSS < 2 && CHANGE < 15 && MEM_FREE > 30 && CPU < 1.5 )); then
-        STABLE_COUNT=$((STABLE_COUNT + 1))
-        GAIN=$((GAIN + 1))
-        [ "$GAIN" -gt "$GAIN_MAX" ] && GAIN=$GAIN_MAX
-        ALPHA=75
-    else
-        STABLE_COUNT=0
-        GAIN=$((GAIN - 1))
-        [ "$GAIN" -lt 3 ] && GAIN=3
-        ALPHA=55
-    fi
+    INTEGRAL=$((INTEGRAL + ERROR))
+    [ $INTEGRAL -gt 200 ] && INTEGRAL=200   # 抗饱和
+    [ $INTEGRAL -lt -200 ] && INTEGRAL=-200
+
+    DERIV=$((ERROR - PREV_ERROR))
+    PID_OUTPUT=$(( KP*ERROR + KI*INTEGRAL + KD*DERIV ))
+
+    GAIN=$((3 + PID_OUTPUT / 10))
+    [ $GAIN -lt 2 ] && GAIN=2
+    [ $GAIN -gt 8 ] && GAIN=8
 
     MAX_BUF=$((SMOOTHED_BDP * GAIN))
-    [ "$MAX_BUF" -gt 16777216 ] && MAX_BUF=16777216
+    [ $MAX_BUF -gt 16777216 ] && MAX_BUF=16777216
 
-    # 收敛 + 应用参数（保持原逻辑）
-    if [ $STABLE_COUNT -ge $STABLE_WIN ]; then
-        INTERVAL=3600
-        ALPHA=40
-        log "系统已收敛，进入稳定模式"
-    else
-        INTERVAL=$((600 + STABLE_COUNT * 300))
-    fi
+    # 应用
+    cat > /etc/sysctl.d/99-pid-tcp.conf << EOF
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_fastopen = 3
+net.core.rmem_max = ${MAX_BUF}
+net.core.wmem_max = ${MAX_BUF}
+net.ipv4.tcp_rmem = 4096 131072 ${MAX_BUF}
+net.ipv4.tcp_wmem = 4096 65536 ${MAX_BUF}
+EOF
+    sysctl -p /etc/sysctl.d/99-pid-tcp.conf >/dev/null 2>&1
+    modprobe tcp_bbr 2>/dev/null || true
 
-    # ...（sysctl应用部分与之前相同，省略以聚焦测量）
+    log "PID状态: RTT=${RTT} Loss=${LOSS} BW=${BW} Error=${ERROR} Integral=${INTEGRAL} Gain=${GAIN} Buf=${MAX_BUF}"
 
-    log "优化完成: RTT=${RTT}ms Loss=${LOSS}% BW=${BW}Mbps Gain=${GAIN} Buf=${MAX_BUF}"
-
-    sleep 8
+    PREV_ERROR=$ERROR
     PREV_RTT=$RTT
     sleep $INTERVAL
 done
