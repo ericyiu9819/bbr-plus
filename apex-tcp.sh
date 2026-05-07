@@ -1,13 +1,10 @@
 #!/bin/bash
-# VPS TCP 激进自适应优化 v3.4 - 中国用户一键自安装版
-# 使用方法：curl -fsSL https://... | bash 或直接保存执行
-
+# VPS TCP 激进自适应优化 v3.6 - 中国用户最终修复版（jq + 整数双收敛）
 set -euo pipefail
 SCRIPT_PATH="/root/tcp-optimize.sh"
 LOG="/var/log/tcp-dynamic-opt.log"
 TEST_HOST="8.8.8.8"
 
-# 中国优化iperf3服务器列表（优先HK/SG）
 IPERF_SERVERS=(
     "speedtest.hkg12.hk.leaseweb.net"
     "84.17.57.129"
@@ -32,52 +29,67 @@ CURRENT_GAIN=3.0
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 
-# ==================== 自安装依赖 ====================
-install_dependencies() {
-    log "开始检测并安装依赖..."
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq
-        apt-get install -y iperf3 mtr jq bc
-    elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y iperf3 mtr jq bc
-    elif command -v yum >/dev/null 2>&1; then
-        yum install -y iperf3 mtr jq bc
+# ==================== 安全函数 ====================
+safe_rtt() {
+    local host=$1
+    local raw=$(ping -c 3 -W 2 "$host" 2>/dev/null | tail -n 1 | awk -F/ '{print $5}' | tr -dc '0-9' | head -c 10)
+    if [[ -z "$raw" || "$raw" -eq 0 ]]; then
+        echo 9999
     else
-        log "警告: 无法识别包管理器，请手动安装 iperf3 mtr jq bc"
+        echo "$raw"
     fi
-    log "依赖安装完成"
 }
 
-# ==================== 自保存 ====================
-self_save() {
-    if [ "$0" != "$SCRIPT_PATH" ]; then
-        log "首次运行，保存脚本到 $SCRIPT_PATH"
-        cp "$0" "$SCRIPT_PATH" 2>/dev/null || cat > "$SCRIPT_PATH" << 'EOF'
-[此处应粘贴本脚本完整内容，实际部署时自动处理]
-EOF
-        chmod +x "$SCRIPT_PATH"
-        log "脚本已持久化，建议以后直接运行 $SCRIPT_PATH"
+safe_bw_mbps() {
+    local srv=$1
+    local json=$(iperf3 -c "$srv" -t 5 -J 2>/dev/null || echo '{}')
+    local bps=$(echo "$json" | jq -r '.end.sum_sent.bits_per_second // 0')
+    if [[ "$bps" == "null" || -z "$bps" || "$bps" -eq 0 ]]; then
+        echo 80
+    else
+        echo "$((bps / 1000000))"
     fi
 }
 
 # ==================== 服务器选择 ====================
 select_best_iperf() {
     local best_rtt=9999 best_srv=""
+    log "开始选择最优服务器..."
     for srv in "${IPERF_SERVERS[@]}"; do
-        local rtt=$(ping -c 3 -W 1 "$srv" 2>/dev/null | tail -1 | awk -F/ '{print int($5)}' || echo 9999)
+        local rtt=$(safe_rtt "$srv")
+        log "  测试 $srv → RTT=${rtt}ms"
         if [ "$rtt" -lt "$best_rtt" ]; then
             best_rtt=$rtt
             best_srv=$srv
         fi
     done
     CURRENT_IPERF=$best_srv
-    log "自动选中中国优化服务器: $CURRENT_IPERF (RTT≈${best_rtt}ms)"
+    log "✅ 选中: $CURRENT_IPERF (RTT≈${best_rtt}ms)"
 }
 
-# 主逻辑
+# ==================== 安装 & 自保存 ====================
+install_dependencies() {
+    log "安装依赖..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y iperf3 mtr jq bc
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y iperf3 mtr jq bc
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y iperf3 mtr jq bc
+    fi
+}
+
+self_save() {
+    if [ "$0" != "$SCRIPT_PATH" ]; then
+        log "持久化脚本到 $SCRIPT_PATH"
+        cp "$0" "$SCRIPT_PATH" 2>/dev/null || cat "$0" > "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+    fi
+}
+
+# 主流程
 if [[ $EUID -ne 0 ]]; then 
-    log "错误: 必须以root运行"; 
-    exit 1; 
+    log "错误: 必须root运行"; exit 1; 
 fi
 
 install_dependencies
@@ -87,14 +99,15 @@ select_best_iperf
 while true; do
     CPU_LOAD=$(awk '{print $1}' /proc/loadavg)
     MEM_FREE_PCT=$(free -m | awk 'NR==2 {print int(($4+$7)/$2*100)}' || echo 50)
-    MIN_RTT=$(ping -c 6 -i 0.2 "$TEST_HOST" 2>/dev/null | tail -1 | awk -F/ '{print int($5)}' || echo 200)
+    MIN_RTT=$(safe_rtt "$TEST_HOST")
     LOSS=$(mtr -r -c 8 "$TEST_HOST" 2>/dev/null | tail -1 | awk '{print int($NF)}' || echo 2)
 
-    BW_MBPS=$(iperf3 -c "$CURRENT_IPERF" -t 5 -J 2>/dev/null | jq -r '.end.sum_sent.bits_per_second/1000000' || echo 80)
-    if [ "$BW_MBPS" = "80" ] || [ "$BW_MBPS" = "0" ] || (( $(echo "$BW_MBPS < 10" | bc -l 2>/dev/null || echo 0) )); then
+    # 带宽测量（强容错）
+    BW_MBPS=$(safe_bw_mbps "$CURRENT_IPERF")
+    if [ "$BW_MBPS" -eq 80 ]; then
         log "测量异常，重新选择服务器..."
         select_best_iperf
-        BW_MBPS=$(iperf3 -c "$CURRENT_IPERF" -t 5 -J 2>/dev/null | jq -r '.end.sum_sent.bits_per_second/1000000' || echo 80)
+        BW_MBPS=$(safe_bw_mbps "$CURRENT_IPERF")
     fi
 
     NEW_BDP=$(( BW_MBPS * 125 * MIN_RTT / 1000 ))
@@ -145,10 +158,10 @@ EOF
     sysctl -p /etc/sysctl.d/99-aggressive-tcp.conf >/dev/null 2>&1
     modprobe tcp_bbr 2>/dev/null || true
 
-    log "优化完成: RTT=${MIN_RTT}ms Loss=${LOSS}% Gain=${CURRENT_GAIN} Buf=${MAX_BUF} Interval=${INTERVAL}s BW=${BW_MBPS}Mbps"
+    log "优化完成: RTT=${MIN_RTT}ms Loss=${LOSS}% Gain=${CURRENT_GAIN} Buf=${MAX_BUF} BW≈${BW_MBPS}Mbps Server=${CURRENT_IPERF}"
 
     sleep 8
-    NEW_RTT=$(ping -c 3 "$TEST_HOST" 2>/dev/null | tail -1 | awk -F/ '{print int($5)}' || echo "$MIN_RTT")
+    NEW_RTT=$(safe_rtt "$TEST_HOST")
     if (( NEW_RTT * 100 < MIN_RTT * 92 )); then
         log "✓ 飞轮正向：延迟改善"
     fi
