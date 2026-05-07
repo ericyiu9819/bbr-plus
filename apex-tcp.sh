@@ -1,27 +1,29 @@
 #!/bin/bash
-# PID-BBR-Gain 自适应TCP优化 v5.0 - 全新控制论算法
+# PID-BBR-Gain 自适应TCP优化 v5.1 - 全部整数化 + 零浮点错误版
 set -euo pipefail
 LOG="/var/log/pid-tcp-opt.log"
 TEST_HOST="8.8.8.8"
 
-IPERF_SERVERS=("speedtest.hkg12.hk.leaseweb.net" "84.17.57.129" "speedtest.sin1.sg.leaseweb.net")
+IPERF_SERVERS=("speedtest.hkg12.hk.leaseweb.net" "84.17.57.129" "speedtest.sin1.sg.leaseweb.net" "89.187.162.1")
 
 CURRENT_IPERF=""
 INTERVAL=600
 
-# PID参数（可在线自适应调优）
-KP=0.8
-KI=0.15
-KD=0.4
+# PID参数（扩大100倍，全部整数运算）
+KP=80      # 实际0.8
+KI=15      # 实际0.15
+KD=40      # 实际0.4
 INTEGRAL=0
 PREV_ERROR=0
-GAIN=3.0
+GAIN=3
 SMOOTHED_BDP=0
 PREV_RTT=200
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 
-safe_int() { echo "$1" | tr -dc '0-9' | sed 's/^0*//' | head -c 10 | grep -E '^[0-9]+$' || echo 0; }
+safe_int() {
+    echo "$1" | tr -dc '0-9' | sed 's/^0*//' | head -c 10 | grep -E '^[0-9]+$' || echo 0
+}
 
 measure_rtt() {
     local raw=$(ping -c 4 -W 2 "$1" 2>/dev/null | tail -n1 | awk -F/ '{print $5}' | tr -dc '0-9')
@@ -43,14 +45,15 @@ select_best_server() {
     local best=9999 srv=""
     for s in "${IPERF_SERVERS[@]}"; do
         local r=$(measure_rtt "$s")
+        log "  测试 $s → RTT=${r}ms"
         [ "$r" -lt "$best" ] && best=$r && srv=$s
     done
     CURRENT_IPERF=$srv
-    log "选中服务器: $CURRENT_IPERF"
+    log "✅ 选中服务器: $CURRENT_IPERF"
 }
 
-if [[ $EUID -ne 0 ]]; then log "必须root"; exit 1; fi
-# 安装依赖（幂等）
+if [[ $EUID -ne 0 ]]; then log "必须root运行"; exit 1; fi
+
 command -v iperf3 >/dev/null || apt-get update -qq && apt-get install -y iperf3 mtr jq bc 2>/dev/null || true
 select_best_server
 
@@ -62,28 +65,31 @@ while true; do
 
     BDP=$((10#${BW} * 125 * 10#${RTT} / 1000))
     [ $SMOOTHED_BDP -eq 0 ] && SMOOTHED_BDP=$BDP
-    SMOOTHED_BDP=$(( (65 * BDP + 35 * SMOOTHED_BDP) / 100 ))   # 简单低通
+    SMOOTHED_BDP=$(( (65 * BDP + 35 * SMOOTHED_BDP) / 100 ))
 
-    # PID核心计算
-    ERROR=$(( (RTT * 100 / (PREV_RTT + 1)) - 100 ))   # 百分比偏差（>0表示恶化）
+    # PID核心（全部整数）
+    ERROR=$(( (RTT * 100 / (PREV_RTT + 1)) - 100 ))
     [ $ERROR -gt 50 ] && ERROR=50
     [ $ERROR -lt -30 ] && ERROR=-30
 
     INTEGRAL=$((INTEGRAL + ERROR))
-    [ $INTEGRAL -gt 200 ] && INTEGRAL=200   # 抗饱和
+    [ $INTEGRAL -gt 200 ] && INTEGRAL=200
     [ $INTEGRAL -lt -200 ] && INTEGRAL=-200
 
     DERIV=$((ERROR - PREV_ERROR))
-    PID_OUTPUT=$(( KP*ERROR + KI*INTEGRAL + KD*DERIV ))
 
-    GAIN=$((3 + PID_OUTPUT / 10))
+    # PID输出 = (KP*ERROR + KI*INTEGRAL + KD*DERIV) / 100
+    PID_RAW=$(( KP * ERROR + KI * INTEGRAL + KD * DERIV ))
+    PID_OUTPUT=$(( PID_RAW / 100 ))
+
+    GAIN=$((3 + PID_OUTPUT))
     [ $GAIN -lt 2 ] && GAIN=2
     [ $GAIN -gt 8 ] && GAIN=8
 
     MAX_BUF=$((SMOOTHED_BDP * GAIN))
     [ $MAX_BUF -gt 16777216 ] && MAX_BUF=16777216
 
-    # 应用
+    # 应用参数
     cat > /etc/sysctl.d/99-pid-tcp.conf << EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
